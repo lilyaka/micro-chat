@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="X-UA-Compatible" content="ie=edge">
+    <title>My Website</title>
+    <link rel="stylesheet" href="css/stylesheet.css">
+</head>
+
+<body>
+<main>
+    <div class="chat-history flex flex-column justify-content-center align-items-center">
+        <div class="chat-header" id="conversation-name"><h2></h2></div>
+        <div class='chat-body flex flex-column'></div>
+    </div>
+</main>
+
+<template id='left-message-template'>
+    <div class='message left-message'>
+        <small class='time'></small>
+    </div>
+</template>
+<template id='right-message-template'>
+    <div class='message right-message'>
+        <span class='content'></span>
+        <small class='time'></small>
+    </div>
+</template>
+<template id='reply-message-template'>
+    <div class='reply-message'>
+        <strong></strong>
+        <small></small>
+    </div>
+</template>
+<template id='message-time'>
+    <div class='message-time'>
+        <div class='horizontal-divider'></div>
+        <small></small>
+    </div>
+</template>
+<template id='message-action'>
+    <div class='message-action'>
+        <span></span>
+    </div>
+</template>
+<template id='link-message-template'>
+    <span></span>
+</template>
+<template id='images-message-template'>
+    <div class='images-message'></div>
+</template>
+<template id='files-message-template'>
+    <div class='files-message'></div>
+</template>
+<template id='text-message-template'>
+    <span></span>
+</template>
+<template id='image-message-template'>
+    <img class='image' alt='' src=''/>
+</template>
+<template id='file-message-template'>
+    <div class='file-message'>
+        <img class='file-icon' alt='' src=''/>
+        <div class='file'>
+            <span></span>
+            <small></small>
+        </div>
+    </div>
+</template>
+
+<script src="libs/jquery.js"></script>
+<script src="libs/linkify.min.js"></script>
+<script src="libs/linkify-html.min.js"></script>
+<script src="libs/moment.js"></script>
+<script src="js/data.js"></script>
+<script src="js/main.js"></script>
+</body>
+
+</html>

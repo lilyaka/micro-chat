@@ -1,0 +1,155 @@
+body {
+    font-family: "Roboto Thin", Tahoma, Arial, sans-serif;
+}
+
+.flex {
+    display: flex;
+}
+
+.flex-row {
+    flex-direction: row;
+}
+
+.flex-column {
+    flex-direction: column;
+}
+
+.justify-content-center {
+    justify-content: center;
+}
+
+.align-items-center {
+    align-items: center;
+}
+
+.chat-history {
+    width: 50%;
+    margin: 0 auto;
+}
+
+.chat-body {
+    width: 100%;
+    row-gap: 0.1rem;
+    /*border: 1px solid #ccc;*/
+    /*border-radius: 1rem;*/
+    /*padding: 1rem;*/
+}
+
+.message {
+    border: 1px solid #ccc;
+    border-radius: 0.5rem;
+    padding: 0.5rem 0.75rem;
+    max-width: 75%;
+    width: fit-content;
+    word-break: break-word;
+
+    display: flex;
+    flex-direction: column;
+    row-gap: 0.25rem;
+}
+
+.message .content {
+    white-space: pre-wrap;
+}
+
+.message .time {
+    font-style: italic;
+    opacity: 0.7;
+    text-align: right;
+}
+
+.reply-message {
+    display: flex;
+    flex-direction: column;
+    row-gap: 0.25rem;
+    padding-bottom: 0.5rem;
+    margin-bottom: 0.5rem;
+}
+
+.reply-message small {
+    font-style: italic;
+}
+
+.left-message {
+    background-color: #f5d974;
+}
+
+.left-message .reply-message {
+    border-bottom: 1px solid #000;
+}
+
+.right-message {
+    align-self: end;
+    background-color: #1992D4;
+    color: #ffffff;
+}
+
+.right-message .time {
+    text-align: right;
+}
+
+.right-message .reply-message {
+    border-bottom: 1px solid #fff;
+}
+
+.message-time {
+    width: 100%;
+    margin: 1rem auto;
+    position: relative;
+}
+
+.message-time .horizontal-divider {
+    border-top: 1px solid #ccc;
+    position: absolute;
+    width: 100%;
+    height: 1px;
+    top: 50%;
+    transform: translateY(-50%);
+}
+
+.message-time small {
+    display: block;
+    width: fit-content;
+    margin: 0 auto;
+    padding: 0.25rem 1rem;
+    background: #ccc;
+    color: #fff;
+    clip-path: polygon(10% 5%, 90% 5%, 100% 50%, 90% 95%, 10% 95%, 0% 50%);
+}
+
+.message-action {
+    margin: 0 auto;
+}
+
+.images-message {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: wrap;
+    column-gap: 0.25rem;
+    row-gap: 0.25rem;
+}
+
+.images-message .image {
+    width: 5rem;
+    height: 5rem;
+    object-fit: cover;
+    border: 1px solid #ccc;
+}
+
+.files-message .file-message {
+    display: flex;
+    flex-direction: row;
+    column-gap: 1rem;
+    align-items: center;
+}
+
+.files-message .file-message .file-icon {
+    width: 2rem;
+    height: 2rem;
+}
+
+.files-message .file-message .file {
+    display: flex;
+    flex-direction: column;
+    row-gap: 0.25rem;
+}
