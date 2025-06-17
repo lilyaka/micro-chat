@@ -5,6 +5,8 @@ import org.springframework.data.domain.Page
 import org.springframework.data.domain.Pageable
 import org.springframework.data.mongodb.repository.Aggregation
 import org.springframework.data.mongodb.repository.MongoRepository
+import org.springframework.data.mongodb.repository.Query
+import java.time.LocalDateTime
 import java.util.*
 
 interface MessageRepository : MongoRepository<Message, String> {
@@ -81,4 +83,57 @@ interface MessageRepository : MongoRepository<Message, String> {
         }""",
     ])
     fun findAttachmentById(attachmentId: String): Optional<Attachment>
+
+    // Message status tracking methods
+    @Query("{'conversationId': ?0, 'fromUserId': {\$ne: ?1}, 'sentAt': {\$gte: ?2}, 'deliveredIds': {\$nin: [?1]}}")
+    fun findRecentUndeliveredMessages(
+        conversationId: String,
+        userId: String,
+        since: LocalDateTime
+    ): List<Message>
+
+    @Query("{'conversationId': ?0, 'fromUserId': {\$ne: ?1}, 'readIds': {\$nin: [?1]}}")
+    fun findUnreadMessagesForUser(conversationId: String, userId: String): List<Message>
+
+    @Query("{'conversationId': ?0, 'fromUserId': {\$ne: ?1}, 'deliveredIds': {\$nin: [?1]}}")
+    fun findUndeliveredMessagesForUser(conversationId: String, userId: String): List<Message>
+
+    @Query("{'conversationId': ?0, 'sentAt': {\$gte: ?1}}")
+    fun findRecentMessagesByConversation(conversationId: String, since: LocalDateTime): List<Message>
+
+    // Batch update support
+    @Query("{'_id': {\$in: ?0}}")
+    fun findMessagesByIds(messageIds: List<String>): List<Message>
+
+    // Statistics queries
+    @Aggregation(pipeline = [
+        """{
+            ${"$"}match: {
+                "conversationId": ?0,
+                "fromUserId": ?1,
+                "sentAt": {
+                    ${"$"}gte: ?2
+                }
+            }
+        }""",
+        """{
+            ${"$"}group: {
+                "_id": null,
+                "totalSent": { ${"$"}sum: 1 },
+                "totalDelivered": { ${"$"}sum: "${"$"}deliveredCount" },
+                "totalRead": { ${"$"}sum: "${"$"}readCount" }
+            }
+        }"""
+    ])
+    fun getMessageStatistics(conversationId: String, userId: String, since: LocalDateTime): MessageStatistics?
+
+    // For large group optimization
+    @Query("{'conversationId': ?0, 'fromUserId': ?1, 'sentAt': {\$gte: ?2}}")
+    fun findUserRecentMessages(conversationId: String, userId: String, since: LocalDateTime): List<Message>
 }
+
+data class MessageStatistics(
+    val totalSent: Int,
+    val totalDelivered: Int,
+    val totalRead: Int
+)
