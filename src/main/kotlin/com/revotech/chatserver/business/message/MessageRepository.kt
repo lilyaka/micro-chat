@@ -130,10 +130,85 @@ interface MessageRepository : MongoRepository<Message, String> {
     // For large group optimization
     @Query("{'conversationId': ?0, 'fromUserId': ?1, 'sentAt': {\$gte: ?2}}")
     fun findUserRecentMessages(conversationId: String, userId: String, since: LocalDateTime): List<Message>
+
+    /**
+     * Tìm vị trí của message trong conversation (sorted by sentAt desc)
+     * Return số lượng messages newer than target message
+     */
+    @Query("{'conversationId': ?0, 'sentAt': {\$gt: ?1}}")
+    fun countMessagesNewerThan(conversationId: String, targetMessageSentAt: LocalDateTime): Long
+
+    /**
+     * Lấy messages xung quanh target message với context
+     */
+    @Query("{'conversationId': ?0}")
+    fun findByConversationIdWithContext(
+        conversationId: String,
+        pageable: Pageable
+    ): Page<Message>
+
+    /**
+     * Tìm message và lấy context xung quanh nó
+     */
+    @Aggregation(pipeline = [
+        """
+        {
+            ${'$'}match: {
+                conversationId: ?0
+            }
+        }
+        """,
+        """
+        {
+            ${'$'}sort: {
+                sentAt: -1
+            }
+        }
+        """,
+        """
+        {
+            ${'$'}group: {
+                _id: null,
+                messages: { ${'$'}push: "$${'$'}ROOT" },
+                total: { ${'$'}sum: 1 }
+            }
+        }
+        """,
+        """
+        {
+            ${'$'}project: {
+                targetIndex: {
+                    ${'$'}indexOfArray: ["${'$'}messages._id", ?1]
+                },
+                messages: 1,
+                total: 1
+            }
+        }
+        """
+    ])
+    fun findMessagePositionInConversation(conversationId: String, messageId: String): MessagePositionResult?
+
+    fun findByConversationIdAndSentAtGreaterThan(
+        conversationId: String,
+        sentAt: LocalDateTime,
+        pageable: Pageable
+    ): Page<Message>
+
+    fun findByConversationIdAndSentAtLessThan(
+        conversationId: String,
+        sentAt: LocalDateTime,
+        pageable: Pageable
+    ): Page<Message>
 }
 
 data class MessageStatistics(
     val totalSent: Int,
     val totalDelivered: Int,
     val totalRead: Int
+)
+
+data class MessagePositionResult(
+    val targetIndex: Int,
+    val messages: List<Message>,
+    val total: Int
 )

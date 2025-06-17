@@ -2,6 +2,7 @@ package com.revotech.chatserver.controller
 
 import com.revotech.chatserver.business.ExportHistoryService
 import com.revotech.chatserver.business.attachment.Attachment
+import com.revotech.chatserver.business.message.MessageContextResponse
 import com.revotech.chatserver.business.message.MessageService
 import org.springframework.core.io.Resource
 import org.springframework.data.domain.Pageable
@@ -42,4 +43,29 @@ class HistoryController(
             it.contentDisposition = contentDisposition
         }
         .body(resource)
+
+    /**
+     * Jump to specific message và lấy context xung quanh
+     */
+    @GetMapping("/jump-to-message/{messageId}")
+    fun jumpToMessage(
+        @PathVariable messageId: String,
+        @RequestParam conversationId: String,
+        @RequestParam(defaultValue = "20") pageSize: Int
+    ): MessageContextResponse {
+        return messageService.getMessageContext(conversationId, messageId, pageSize)
+    }
+
+    /**
+     * Alternative: Lấy context với offset cố định
+     */
+    @GetMapping("/message-context/{messageId}")
+    fun getMessageContext(
+        @PathVariable messageId: String,
+        @RequestParam conversationId: String,
+        @RequestParam(defaultValue = "10") beforeCount: Int,
+        @RequestParam(defaultValue = "10") afterCount: Int
+    ): MessageContextResponse {
+        return messageService.getMessageContextWithOffset(conversationId, messageId, beforeCount, afterCount)
+    }
 }

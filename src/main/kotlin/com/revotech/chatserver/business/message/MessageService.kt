@@ -11,7 +11,9 @@ import com.revotech.chatserver.helper.TenantHelper
 import com.revotech.chatserver.payload.MessagePayload
 import com.revotech.util.WebUtil
 import org.springframework.data.domain.Page
+import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
+import org.springframework.data.domain.Sort
 import org.springframework.messaging.simp.SimpMessagingTemplate
 import org.springframework.security.authentication.AbstractAuthenticationToken
 import org.springframework.stereotype.Service
@@ -153,4 +155,105 @@ class MessageService(
 
     fun getAttachment(attachmentId: String): Attachment? =
         messageRepository.findAttachmentById(attachmentId).orElse(null)
+
+    /**
+     * Tìm page chứa target message và return context xung quanh
+     */
+    fun getMessageContext(conversationId: String, messageId: String, pageSize: Int = 20): MessageContextResponse {
+        // 1. Lấy target message
+        val targetMessage = chatService.getMessage(messageId)
+
+        // 2. Đếm số messages newer than target
+        val newerMessagesCount = messageRepository.countMessagesNewerThan(
+            conversationId,
+            targetMessage.sentAt
+        )
+
+        // 3. Tính page number chứa target message
+        val targetPageNumber = (newerMessagesCount / pageSize).toInt()
+
+        // 4. Lấy messages từ page đó
+        val pageable = PageRequest.of(targetPageNumber, pageSize, Sort.by(Sort.Direction.DESC, "sentAt"))
+        val messagesPage = getHistories(conversationId, pageable)
+
+        // 5. Tìm index của target message trong page
+        val targetIndex = messagesPage.content.indexOfFirst { it.id == messageId }
+
+        return MessageContextResponse(
+            messages = messagesPage.content,
+            targetMessageId = messageId,
+            targetIndex = targetIndex,
+            pageNumber = targetPageNumber,
+            totalPages = messagesPage.totalPages,
+            totalElements = messagesPage.totalElements,
+            hasNext = messagesPage.hasNext(),
+            hasPrevious = messagesPage.hasPrevious()
+        )
+    }
+
+    /**
+     * Alternative: Lấy context xung quanh message với offset
+     */
+    fun getMessageContextWithOffset(
+        conversationId: String,
+        messageId: String,
+        beforeCount: Int = 10,
+        afterCount: Int = 10
+    ): MessageContextResponse {
+
+        val targetMessage = chatService.getMessage(messageId)
+
+        // Lấy messages before target (newer messages)
+        val beforePageable = PageRequest.of(0, beforeCount, Sort.by(Sort.Direction.ASC, "sentAt"))
+        val messagesAfter = messageRepository.findByConversationIdAndSentAtGreaterThan(
+            conversationId, targetMessage.sentAt, beforePageable
+        ).content.reversed() // Reverse để có thứ tự desc
+
+        // Lấy messages after target (older messages)
+        val afterPageable = PageRequest.of(0, afterCount, Sort.by(Sort.Direction.DESC, "sentAt"))
+        val messagesBefore = messageRepository.findByConversationIdAndSentAtLessThan(
+            conversationId, targetMessage.sentAt, afterPageable
+        ).content
+
+        // Combine: newer + target + older
+        val allMessages = mutableListOf<Message>().apply {
+            addAll(messagesAfter)
+            add(targetMessage)
+            addAll(messagesBefore)
+        }
+
+        // Populate user info
+        val mapUser = HashMap<String, User?>()
+        allMessages.forEach { message ->
+            getMessageInfo(mapUser, message)
+
+            if (message.replyMessageId != null) {
+                val replyMessage = allMessages.find { it.id == message.replyMessageId }
+                    ?: chatService.getMessage(message.replyMessageId!!)
+                message.replyMessage = replyMessage
+            }
+        }
+
+        return MessageContextResponse(
+            messages = allMessages,
+            targetMessageId = messageId,
+            targetIndex = messagesAfter.size, // Index của target message
+            pageNumber = -1, // Không áp dụng cho context mode
+            totalPages = -1,
+            totalElements = allMessages.size.toLong(),
+            hasNext = false,
+            hasPrevious = false
+        )
+    }
 }
+
+data class MessageContextResponse(
+    val messages: List<Message>,
+    val targetMessageId: String,
+    val targetIndex: Int, // Index của target message trong list
+    val pageNumber: Int,
+    val totalPages: Int,
+    val totalElements: Long,
+    val hasNext: Boolean,
+    val hasPrevious: Boolean
+)
