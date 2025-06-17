@@ -6,10 +6,11 @@ import java.time.LocalDateTime
 
 
 data class ConversationPayload(
-    val name: String,
-    val isGroup: Boolean,
-    val avatar: MultipartFile?,
-    val members: MutableList<String>
+    val name: String = "", // Optional cho 1-on-1, required cho nhóm
+    @JsonProperty("isGroup") // Deprecated, sẽ tự động detect
+    val isGroup: Boolean? = null, // Backward compatibility
+    val avatar: MultipartFile? = null,
+    val members: MutableList<String> // Chỉ cần list user IDs
 )
 
 data class ConversationNamePayload(
@@ -48,4 +49,17 @@ enum class ConversationAction {
 data class ConversationActionMessage(
     val type: ConversationAction,
     val metadata: String
+)
+
+/**
+ * Quick conversation payloads for common scenarios
+ */
+data class QuickChatPayload(
+    val userIds: List<String>,
+    val groupName: String? = null // Only needed if >2 users
+)
+
+data class MultiUserChatPayload(
+    val userIds: List<String>,
+    val chatName: String
 )

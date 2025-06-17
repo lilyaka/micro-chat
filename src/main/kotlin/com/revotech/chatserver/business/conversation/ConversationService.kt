@@ -79,28 +79,55 @@ class ConversationService(
         conversation.lastMessage?.sender = mapUser[fromId]?.fullName ?: ""
     }
 
+    /**
+     * Tạo conversation thông minh:
+     * - 2 người: Tự động tạo 1-on-1 (kiểm tra existing trước)
+     * - >2 người: Tự động tạo nhóm
+     */
     fun createConversation(conversationPayload: ConversationPayload): Conversation {
-        if (conversationPayload.name.isEmpty() || conversationPayload.members.isEmpty()) {
-            throw ConversationValidateException("conversationInvalid", "Conversation is invalid.")
+        if (conversationPayload.members.isEmpty()) {
+            throw ConversationValidateException("conversationInvalid", "Cần ít nhất 1 người để tạo cuộc trò chuyện.")
         }
-        val userId = webUtil.getUserId()
-        conversationPayload.members.add(userId)
 
-        var conversation =
-            Conversation(
-                null,
-                conversationPayload.name,
-                "",
-                conversationPayload.isGroup,
-                userId,
-                if (conversationPayload.isGroup) mutableListOf(userId) else mutableListOf(),
-                conversationPayload.members
-            )
+        val currentUserId = webUtil.getUserId()
+        val allMembers = conversationPayload.members.toMutableList().apply {
+            if (!contains(currentUserId)) add(currentUserId)
+        }
+
+        // Auto-detect conversation type based on member count
+        return when (allMembers.size) {
+            2 -> {
+                val targetUserId = allMembers.first { it != currentUserId }
+                findOrCreate1on1Conversation(targetUserId)
+            }
+            else -> {
+                createGroupConversation(conversationPayload, allMembers)
+            }
+        }
+    }
+
+    private fun createGroupConversation(conversationPayload: ConversationPayload, members: MutableList<String>): Conversation {
+        if (conversationPayload.name.isBlank()) {
+            throw ConversationValidateException("groupNameRequired", "Tên nhóm không được để trống.")
+        }
+
+        val currentUserId = webUtil.getUserId()
+        var conversation = Conversation(
+            null,
+            conversationPayload.name,
+            "",
+            true, // isGroup = true
+            currentUserId,
+            mutableListOf(currentUserId), // Creator làm admin
+            members
+        )
+
         conversation = conversationRepository.save(conversation)
 
-        conversation.members.filter { it != userId }.forEach {
+        // Notify other members
+        members.filter { it != currentUserId }.forEach { memberId ->
             simpMessagingTemplate.convertAndSendToUser(
-                it,
+                memberId,
                 PRIVATE_CHANNEL_DESTINATION,
                 NewConversationMessage(conversation)
             )
@@ -109,6 +136,9 @@ class ConversationService(
         return conversation
     }
 
+    /**
+     * Tạo conversation 1-on-1, kiểm tra existing trước
+     */
     fun create1on1Conversation(userId: String): Conversation {
         val currentUserId = webUtil.getUserId()
 
@@ -118,7 +148,7 @@ class ConversationService(
                 null,
                 user?.fullName ?: "",
                 user?.avatar ?: "",
-                false,
+                false, // isGroup = false
                 currentUserId,
                 mutableListOf(),
                 mutableListOf(userId, currentUserId)
@@ -135,6 +165,9 @@ class ConversationService(
         }
     }
 
+    /**
+     * Tạo conversation từ group có sẵn
+     */
     fun createGroupConversation(groupId: String): Conversation {
         val userId = webUtil.getUserId()
         return conversationRepository.findById(groupId).orElseGet {
