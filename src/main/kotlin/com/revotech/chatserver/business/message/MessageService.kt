@@ -4,6 +4,7 @@ import com.revotech.chatserver.business.CHAT_DESTINATION
 import com.revotech.chatserver.business.ChatService
 import com.revotech.chatserver.business.attachment.Attachment
 import com.revotech.chatserver.business.conversation.Conversation
+import com.revotech.chatserver.business.presence.UserPresenceService
 import com.revotech.chatserver.business.user.User
 import com.revotech.chatserver.business.user.UserService
 import com.revotech.chatserver.helper.TenantHelper
@@ -23,7 +24,8 @@ class MessageService(
     private val simpMessagingTemplate: SimpMessagingTemplate,
     private val userService: UserService,
     private val chatService: ChatService,
-    private val webUtil: WebUtil
+    private val webUtil: WebUtil,
+    private val userPresenceService: UserPresenceService // Thêm dependency này
 ) {
     fun sendMessage(messagePayload: MessagePayload, principal: Principal) {
         val userId = principal.name
@@ -40,6 +42,10 @@ class MessageService(
                     .replyMessageId(replyMessageId)
                     .type(MessageType.MESSAGE)
                     .build()
+
+                // Track user activity khi gửi message
+                userPresenceService.updateUserActivity(userId)
+
                 simpMessagingTemplate.convertAndSend(
                     "${CHAT_DESTINATION}/${if (conversation.isGroup) "group" else "user"}/${messagePayload.conversationId}",
                     getSentMessage(messageRepository.save(message))
@@ -85,6 +91,10 @@ class MessageService(
 
     fun markAsReadMessage(conversationId: String): MutableList<Message> {
         val userId = webUtil.getUserId()
+
+        // Track activity khi đọc tin nhắn
+        userPresenceService.updateUserActivity(userId)
+
         return readMessages(userId) {
             findUnreadMessages(userId, conversationId)
         }

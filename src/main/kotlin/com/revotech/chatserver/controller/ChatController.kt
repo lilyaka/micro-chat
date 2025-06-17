@@ -2,6 +2,7 @@ package com.revotech.chatserver.controller
 
 import com.revotech.chatserver.business.group.groupCommentFile.GroupCommentFileService
 import com.revotech.chatserver.business.message.MessageService
+import com.revotech.chatserver.business.presence.UserPresenceService
 import com.revotech.chatserver.business.reaction.MessageReactionService
 import com.revotech.chatserver.business.thread.MessageThreadService
 import com.revotech.chatserver.business.topicComment.TopicCommentService
@@ -20,6 +21,7 @@ class ChatController(
     private val messageReactionService: MessageReactionService,
     private val threadService: MessageThreadService,
     private val typingService: TypingService,
+    private val userPresenceService: UserPresenceService,
 ) {
     @MessageMapping("/chat/send-message")
     fun sendMessage(messagePayload: MessagePayload, principal: Principal) =
@@ -52,5 +54,10 @@ class ChatController(
     fun handleTyping(typingPayload: TypingPayload, principal: Principal) {
         val userId = principal.name
         typingService.handleTyping(typingPayload.conversationId, userId, typingPayload.isTyping)
+    }
+
+    @MessageMapping("/chat/activity")
+    fun handleActivity(principal: Principal) {
+        userPresenceService.updateUserActivity(principal.name)
     }
 }
