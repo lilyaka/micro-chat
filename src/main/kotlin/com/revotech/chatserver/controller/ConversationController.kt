@@ -65,4 +65,17 @@ class ConversationController(
     @GetMapping("/{conversationId}/attachments")
     fun getConversationAttachments(@PathVariable conversationId: String) =
         conversationService.getConversationAttachments(conversationId)
+
+    @GetMapping("/check-1on1/{userId}")
+    fun check1on1Conversation(@PathVariable userId: String): Map<String, Any?> {
+        val conversationId = conversationService.check1on1ConversationExists(userId)
+        return mapOf(
+            "exists" to (conversationId != null),
+            "conversationId" to conversationId
+        )
+    }
+
+    @PostMapping("/find-or-create-1on1/{userId}")
+    fun findOrCreate1on1Conversation(@PathVariable userId: String) =
+        conversationService.findOrCreate1on1Conversation(userId)
 }

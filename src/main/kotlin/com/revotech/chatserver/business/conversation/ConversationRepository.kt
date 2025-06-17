@@ -154,4 +154,22 @@ interface ConversationRepository : MongoRepository<Conversation, String> {
     )
     fun findConversationAttachments(conversationId: String): List<EcmAttachmentPayload>
 
+    @Aggregation(
+        pipeline = [
+            """{
+            ${"$"}match: {
+                "isGroup": false,
+                "members": {
+                    ${"$"}size: 2,
+                    ${"$"}all: [?0, ?1]
+                }
+            }
+        }""",
+            """{
+            ${"$"}limit: 1
+        }"""
+        ]
+    )
+    fun findExisting1on1Conversation(userId1: String, userId2: String): Optional<Conversation>
+
 }

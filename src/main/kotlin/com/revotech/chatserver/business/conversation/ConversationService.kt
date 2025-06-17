@@ -114,19 +114,18 @@ class ConversationService(
     @AfterCreateConversation
     fun create1on1Conversation(userId: String): Conversation {
         val currentUserId = webUtil.getUserId()
-        val members = mutableListOf(userId, currentUserId)
-        return conversationRepository.findByIsGroupFalseAndMembersContaining(members).orElseGet {
+
+        return conversationRepository.findExisting1on1Conversation(currentUserId, userId).orElseGet {
             val user = userService.getUser(userId)
-            var conversation =
-                Conversation(
-                    null,
-                    user?.fullName ?: "",
-                    user?.avatar ?: "",
-                    false,
-                    currentUserId,
-                    mutableListOf(),
-                    members
-                )
+            var conversation = Conversation(
+                null,
+                user?.fullName ?: "",
+                user?.avatar ?: "",
+                false,
+                currentUserId,
+                mutableListOf(),
+                mutableListOf(userId, currentUserId)
+            )
             conversation = conversationRepository.save(conversation)
 
             simpMessagingTemplate.convertAndSendToUser(
@@ -282,4 +281,24 @@ class ConversationService(
 
     fun getConversationAttachments(conversationId: String) =
         conversationRepository.findConversationAttachments(conversationId)
+
+    fun findOrCreate1on1Conversation(targetUserId: String): Conversation {
+        val currentUserId = webUtil.getUserId()
+
+        // Check existing conversation
+        val existing = conversationRepository.findExisting1on1Conversation(currentUserId, targetUserId)
+        if (existing.isPresent) {
+            return existing.get()
+        }
+
+        // Create new if not exists
+        return create1on1Conversation(targetUserId)
+    }
+
+    fun check1on1ConversationExists(targetUserId: String): String? {
+        val currentUserId = webUtil.getUserId()
+        return conversationRepository.findExisting1on1Conversation(currentUserId, targetUserId)
+            .map { it.id }
+            .orElse(null)
+    }
 }
