@@ -2,7 +2,6 @@ package com.revotech.chatserver.business.conversation
 
 import com.revotech.chatserver.business.ChatService
 import com.revotech.chatserver.business.PRIVATE_CHANNEL_DESTINATION
-import com.revotech.chatserver.business.aop.AfterCreateConversation
 import com.revotech.chatserver.business.aop.AfterDeleteConversation
 import com.revotech.chatserver.business.exception.ConversationValidateException
 import com.revotech.chatserver.business.group.GroupService
@@ -80,7 +79,6 @@ class ConversationService(
         conversation.lastMessage?.sender = mapUser[fromId]?.fullName ?: ""
     }
 
-    @AfterCreateConversation
     fun createConversation(conversationPayload: ConversationPayload): Conversation {
         if (conversationPayload.name.isEmpty() || conversationPayload.members.isEmpty()) {
             throw ConversationValidateException("conversationInvalid", "Conversation is invalid.")
@@ -111,7 +109,6 @@ class ConversationService(
         return conversation
     }
 
-    @AfterCreateConversation
     fun create1on1Conversation(userId: String): Conversation {
         val currentUserId = webUtil.getUserId()
 
@@ -138,7 +135,6 @@ class ConversationService(
         }
     }
 
-    @AfterCreateConversation
     fun createGroupConversation(groupId: String): Conversation {
         val userId = webUtil.getUserId()
         return conversationRepository.findById(groupId).orElseGet {
@@ -166,21 +162,6 @@ class ConversationService(
 
             conversation
         }
-    }
-
-    fun addCreateConversationMessage(conversation: Conversation) {
-        val message = Message.Builder()
-            .fromUserId(conversation.creatorId)
-            .conversationId(conversation.id as String)
-            .content(ConversationAction.CREATE.name)
-            .attachments(null)
-            .type(MessageType.ACTION)
-            .build()
-
-        conversation.lastMessage = message
-
-        chatService.saveMessage(message)
-        chatService.saveConversation(conversation)
     }
 
     fun addActionMessage(conversation: Conversation, conversationAction: ConversationAction): Message {

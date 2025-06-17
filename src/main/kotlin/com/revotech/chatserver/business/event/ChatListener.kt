@@ -12,13 +12,6 @@ class ChatListener(
 ) {
     @Async
     @EventListener
-    fun createConversationEvent(event: CreateConversationEvent) {
-        val source = event.source as Conversation
-        conversationService.addCreateConversationMessage(source)
-    }
-
-    @Async
-    @EventListener
     fun deleteConversationEvent(event: DeleteConversationEvent) {
         val source = event.source as String
         conversationService.deleteConversationFolder(source)
