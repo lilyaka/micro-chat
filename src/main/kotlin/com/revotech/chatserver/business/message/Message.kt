@@ -19,6 +19,7 @@ data class Message(
     var isDeleted: Boolean,
     var readIds: MutableList<String>?,
     var replyMessageId: String?,
+    var threadId: String?, // Thêm support cho thread
     var type: MessageType
 ) {
     var avatar: String? = ""
@@ -31,6 +32,7 @@ data class Message(
         private var content: String? = null
         private var attachments: MutableList<Attachment>? = null
         private var replyMessageId: String? = null
+        private var threadId: String? = null // Thêm field cho thread
         private var type: MessageType = MessageType.MESSAGE
 
         fun fromUserId(fromUserId: String) = apply { this.fromUserId = fromUserId }
@@ -40,6 +42,7 @@ data class Message(
             apply { this.attachments = attachments?.toMutableList() }
 
         fun replyMessageId(replyMessageId: String?) = apply { this.replyMessageId = replyMessageId }
+        fun threadId(threadId: String?) = apply { this.threadId = threadId } // Thêm method cho thread
         fun type(type: MessageType) = apply { this.type = type }
 
         fun build() = Message(
@@ -52,6 +55,7 @@ data class Message(
             false,
             mutableListOf(fromUserId),
             replyMessageId,
+            threadId, // Thêm vào constructor
             type
         )
     }
@@ -61,4 +65,3 @@ enum class MessageType {
     MESSAGE,
     ACTION
 }
-

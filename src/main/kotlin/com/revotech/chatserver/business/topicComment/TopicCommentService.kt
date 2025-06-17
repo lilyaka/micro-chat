@@ -44,6 +44,8 @@ class TopicCommentService(
     }
 
     private fun getSentCommentInfo(topicComment: TopicComment): TopicComment {
+        //N+1 query khi load nhiều comments
+        //Fix: Sử dụng batch loading hoặc join query
         userService.getUser(topicComment.senderId!!)?.run {
             topicComment.sender = fullName
             topicComment.avatar = avatar

@@ -18,6 +18,11 @@ interface MessageRepository : MongoRepository<Message, String> {
 
     fun deleteByConversationId(conversationId: String)
 
+    //các method cho thread
+    fun findByThreadIdOrderBySentAtAsc(threadId: String, pageable: Pageable): Page<Message>
+    fun findByThreadIdOrderBySentAtDesc(threadId: String, pageable: Pageable): Page<Message>
+    fun countByThreadId(threadId: String): Long
+
     @Aggregation(pipeline = [
         """{
             ${"$"}match: {
