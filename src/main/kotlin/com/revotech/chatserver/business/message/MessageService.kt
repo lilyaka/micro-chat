@@ -56,6 +56,7 @@ class MessageService(
     private fun getSentMessage(message: Message): Message {
         val user = userService.getUser(message.fromUserId)
         message.sender = user?.fullName ?: ""
+
         if (message.replyMessageId != null) {
             message.replyMessage = chatService.getMessage(message.replyMessageId!!)
             message.replyMessage!!.sender = userService.getUser(message.replyMessage!!.fromUserId)?.fullName

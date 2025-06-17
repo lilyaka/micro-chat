@@ -12,6 +12,11 @@ class MessageReactionService(
 ) {
 
     fun addReaction(messageId: String, emoji: String, userId: String) {
+        // Validation emoji format
+        if (emoji.isBlank() || emoji.length > 10) {
+            throw IllegalArgumentException("Invalid emoji format")
+        }
+
         // Kiểm tra message tồn tại
         val message = chatService.getMessage(messageId)
 
@@ -24,11 +29,7 @@ class MessageReactionService(
             reactionRepository.save(reaction)
 
             // Broadcast reaction update
-            val summary = reactionRepository.getReactionSummary(messageId)
-            simpMessagingTemplate.convertAndSend(
-                "/chat/reaction/${message.conversationId}",
-                ReactionUpdateMessage(messageId, summary)
-            )
+            broadcastReactionUpdate(message.conversationId, messageId)
         }
     }
 
@@ -42,6 +43,18 @@ class MessageReactionService(
             "/chat/reaction/${message.conversationId}",
             ReactionUpdateMessage(messageId, summary)
         )
+    }
+
+    private fun broadcastReactionUpdate(conversationId: String, messageId: String) {
+        val summary = reactionRepository.getReactionSummary(messageId)
+        simpMessagingTemplate.convertAndSend(
+            "/chat/reaction/$conversationId",
+            ReactionUpdateMessage(messageId, summary)
+        )
+    }
+
+    fun getReactionSummary(messageId: String): List<ReactionSummary> {
+        return reactionRepository.getReactionSummary(messageId)
     }
 }
 

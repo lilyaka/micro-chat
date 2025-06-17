@@ -11,10 +11,16 @@ interface MessageReactionRepository : MongoRepository<MessageReaction, String> {
     @Aggregation(pipeline = [
         """{ ${'$'}match: { messageId: ?0 } }""",
         """{ ${'$'}group: { 
-            _id: { emoji: "${'$'}emoji" }, 
-            count: { ${'$'}sum: 1 },
-            users: { ${'$'}push: "${'$'}userId" }
-        }}"""
+        _id: "${'$'}emoji", 
+        count: { ${'$'}sum: 1 },
+        users: { ${'$'}push: "${'$'}userId" }
+    }}""",
+        """{ ${'$'}project: {
+        emoji: "${'$'}_id",
+        count: 1,
+        users: 1,
+        _id: 0
+    }}"""
     ])
     fun getReactionSummary(messageId: String): List<ReactionSummary>
 }
