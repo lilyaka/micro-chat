@@ -1,6 +1,8 @@
 package com.revotech.chatserver.business.presence
 
 import com.revotech.chatserver.business.CHANNEL_DESTINATION
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.context.ApplicationContext
 import org.springframework.messaging.simp.SimpMessagingTemplate
 import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.stereotype.Service
@@ -8,9 +10,15 @@ import java.time.LocalDateTime
 import java.util.concurrent.ConcurrentHashMap
 
 @Service
-class UserPresenceService(
-    private val simpMessagingTemplate: SimpMessagingTemplate
-) {
+class UserPresenceService {
+
+    @Autowired
+    private lateinit var applicationContext: ApplicationContext
+
+    // Lazy initialization để tránh circular dependency
+    private val simpMessagingTemplate: SimpMessagingTemplate by lazy {
+        applicationContext.getBean(SimpMessagingTemplate::class.java)
+    }
 
     // Map<userId, UserPresence>
     private val userPresences = ConcurrentHashMap<String, UserPresence>()
@@ -78,18 +86,23 @@ class UserPresenceService(
     }
 
     private fun broadcastPresenceUpdate(presence: UserPresence) {
-        val update = PresenceUpdate(
-            userId = presence.userId,
-            status = presence.status,
-            lastSeen = presence.lastSeen,
-            sessionCount = presence.sessions.size
-        )
+        try {
+            val update = PresenceUpdate(
+                userId = presence.userId,
+                status = presence.status,
+                lastSeen = presence.lastSeen,
+                sessionCount = presence.sessions.size
+            )
 
-        // Broadcast to all users who need to know this user's status
-        simpMessagingTemplate.convertAndSend(
-            "$CHANNEL_DESTINATION/presence",
-            update
-        )
+            // Broadcast to all users who need to know this user's status
+            simpMessagingTemplate.convertAndSend(
+                "$CHANNEL_DESTINATION/presence",
+                update
+            )
+        } catch (e: Exception) {
+            // Log error but don't fail the operation
+            println("Failed to broadcast presence update: ${e.message}")
+        }
     }
 
     // Auto check status every minute

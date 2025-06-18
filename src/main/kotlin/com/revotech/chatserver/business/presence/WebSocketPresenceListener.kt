@@ -1,6 +1,8 @@
 package com.revotech.chatserver.business.presence
 
 import com.revotech.chatserver.helper.TokenHelper
+import org.springframework.beans.factory.annotation.Autowired
+import org.springframework.context.ApplicationContext
 import org.springframework.context.event.EventListener
 import org.springframework.messaging.simp.stomp.StompHeaderAccessor
 import org.springframework.stereotype.Component
@@ -9,9 +11,16 @@ import org.springframework.web.socket.messaging.SessionDisconnectEvent
 
 @Component
 class WebSocketPresenceListener(
-    private val userPresenceService: UserPresenceService,
     private val tokenHelper: TokenHelper
 ) {
+
+    @Autowired
+    private lateinit var applicationContext: ApplicationContext
+
+    // Lazy initialization để tránh circular dependency
+    private val userPresenceService: UserPresenceService by lazy {
+        applicationContext.getBean(UserPresenceService::class.java)
+    }
 
     @EventListener
     fun handleWebSocketConnectListener(event: SessionConnectEvent) {
@@ -22,7 +31,11 @@ class WebSocketPresenceListener(
             val userId = principal.name
             val sessionId = headerAccessor.sessionId ?: return
 
-            userPresenceService.addUserSession(userId, sessionId)
+            try {
+                userPresenceService.addUserSession(userId, sessionId)
+            } catch (e: Exception) {
+                println("Failed to add user session: ${e.message}")
+            }
         }
     }
 
@@ -35,7 +48,11 @@ class WebSocketPresenceListener(
             val userId = principal.name
             val sessionId = headerAccessor.sessionId ?: return
 
-            userPresenceService.removeUserSession(userId, sessionId)
+            try {
+                userPresenceService.removeUserSession(userId, sessionId)
+            } catch (e: Exception) {
+                println("Failed to remove user session: ${e.message}")
+            }
         }
     }
 }
