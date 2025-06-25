@@ -16,13 +16,13 @@ class ReactionController(
     @PostMapping("/add")
     fun addReaction(@RequestBody payload: ReactionPayload, principal: Principal) {
         val userId = principal.name
-        reactionService.addReaction(payload.messageId, payload.emoji, userId)
+        reactionService.addReaction(payload.messageId, payload.emoji, userId, principal) // ✅ Thêm principal
     }
 
     @DeleteMapping("/remove")
     fun removeReaction(@RequestBody payload: ReactionPayload, principal: Principal) {
         val userId = principal.name
-        reactionService.removeReaction(payload.messageId, payload.emoji, userId)
+        reactionService.removeReaction(payload.messageId, payload.emoji, userId, principal) // ✅ Thêm principal
     }
 
     @GetMapping("/message/{messageId}")
