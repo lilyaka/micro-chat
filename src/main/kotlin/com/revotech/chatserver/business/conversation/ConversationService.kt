@@ -38,9 +38,8 @@ class ConversationService(
         return conversationRepository.save(conversation)
     }
 
-    fun getUserConversations(): List<Conversation> {
+    fun getUserConversations(userId: String): List<Conversation> {
         val mapUser = HashMap<String, User?>()
-        val userId = webUtil.getUserId()
         return conversationRepository.findUserConversation(userId).map {
             it.unread = chatService.countUnreadMessage(it.id as String, userId)
             setLastMessageSender(mapUser, it)
@@ -84,12 +83,11 @@ class ConversationService(
      * - 2 người: Tự động tạo 1-on-1 (kiểm tra existing trước)
      * - >2 người: Tự động tạo nhóm
      */
-    fun createConversation(conversationPayload: ConversationPayload): Conversation {
+    fun createConversation(conversationPayload: ConversationPayload, currentUserId: String): Conversation {
         if (conversationPayload.members.isEmpty()) {
             throw ConversationValidateException("conversationInvalid", "Cần ít nhất 1 người để tạo cuộc trò chuyện.")
         }
 
-        val currentUserId = webUtil.getUserId()
         val allMembers = conversationPayload.members.toMutableList().apply {
             if (!contains(currentUserId)) add(currentUserId)
         }
@@ -98,20 +96,19 @@ class ConversationService(
         return when (allMembers.size) {
             2 -> {
                 val targetUserId = allMembers.first { it != currentUserId }
-                findOrCreate1on1Conversation(targetUserId)
+                findOrCreate1on1Conversation(targetUserId, currentUserId)
             }
             else -> {
-                createGroupConversation(conversationPayload, allMembers)
+                createGroupConversation(conversationPayload, allMembers, currentUserId)
             }
         }
     }
 
-    private fun createGroupConversation(conversationPayload: ConversationPayload, members: MutableList<String>): Conversation {
+    private fun createGroupConversation(conversationPayload: ConversationPayload, members: MutableList<String>, currentUserId: String): Conversation {
         if (conversationPayload.name.isBlank()) {
             throw ConversationValidateException("groupNameRequired", "Tên nhóm không được để trống.")
         }
 
-        val currentUserId = webUtil.getUserId()
         var conversation = Conversation(
             null,
             conversationPayload.name,
@@ -139,9 +136,7 @@ class ConversationService(
     /**
      * Tạo conversation 1-on-1, kiểm tra existing trước
      */
-    fun create1on1Conversation(userId: String): Conversation {
-        val currentUserId = webUtil.getUserId()
-
+    fun create1on1Conversation(userId: String, currentUserId: String): Conversation {
         return conversationRepository.findExisting1on1Conversation(currentUserId, userId).orElseGet {
             val user = userService.getUser(userId)
             var conversation = Conversation(
@@ -168,8 +163,7 @@ class ConversationService(
     /**
      * Tạo conversation từ group có sẵn
      */
-    fun createGroupConversation(groupId: String): Conversation {
-        val userId = webUtil.getUserId()
+    fun createGroupConversation(groupId: String, userId: String): Conversation {
         return conversationRepository.findById(groupId).orElseGet {
             val group = groupService.getGroup(groupId)
             var conversation =
@@ -197,8 +191,7 @@ class ConversationService(
         }
     }
 
-    fun addActionMessage(conversation: Conversation, conversationAction: ConversationAction): Message {
-        val userId = webUtil.getUserId()
+    fun addActionMessage(conversation: Conversation, conversationAction: ConversationAction, userId: String): Message {
         val message = Message.Builder()
             .fromUserId(userId)
             .conversationId(conversation.id as String)
@@ -225,7 +218,7 @@ class ConversationService(
         return conversationRepository.save(conversation)
     }
 
-    fun addConversationMember(conversationId: String, memberIds: MutableList<String>): Conversation {
+    fun addConversationMember(conversationId: String, memberIds: MutableList<String>, userId: String): Conversation {
         var conversation = chatService.getConversation(conversationId)
 
         val filteredMemberIds = memberIds.filter { !conversation.members.contains(it) }
@@ -242,8 +235,7 @@ class ConversationService(
 
             conversation = chatService.saveConversation(conversation)
 
-            val message = addActionMessage(conversation, ConversationAction.ADD_MEMBER)
-            val userId = webUtil.getUserId()
+            val message = addActionMessage(conversation, ConversationAction.ADD_MEMBER, userId)
             message.sender = userService.getUser(userId)?.fullName ?: ""
             conversation.lastMessage = message
         }
@@ -251,7 +243,7 @@ class ConversationService(
         return conversation
     }
 
-    fun removeConversationMember(conversationId: String, memberId: String): Conversation {
+    fun removeConversationMember(conversationId: String, memberId: String, userId: String): Conversation {
         var conversation = chatService.getConversation(conversationId)
         if (conversation.members.any { it == memberId }) {
             conversation.members.remove(memberId)
@@ -263,8 +255,7 @@ class ConversationService(
 
             conversation = chatService.saveConversation(conversation)
 
-            val message = addActionMessage(conversation, ConversationAction.REMOVE_MEMBER)
-            val userId = webUtil.getUserId()
+            val message = addActionMessage(conversation, ConversationAction.REMOVE_MEMBER, userId)
             message.sender = userService.getUser(userId)?.fullName ?: ""
             conversation.lastMessage = message
         }
@@ -273,7 +264,7 @@ class ConversationService(
     }
 
     @AfterDeleteConversation
-    fun deleteConversation(conversationId: String): String {
+    fun deleteConversation(conversationId: String, userId: String): String {
         val conversation = chatService.getConversation(conversationId)
 
         chatService.deleteConversationMessages(conversationId)
@@ -296,9 +287,7 @@ class ConversationService(
     fun getConversationAttachments(conversationId: String) =
         conversationRepository.findConversationAttachments(conversationId)
 
-    fun findOrCreate1on1Conversation(targetUserId: String): Conversation {
-        val currentUserId = webUtil.getUserId()
-
+    fun findOrCreate1on1Conversation(targetUserId: String, currentUserId: String): Conversation {
         // Check existing conversation
         val existing = conversationRepository.findExisting1on1Conversation(currentUserId, targetUserId)
         if (existing.isPresent) {
@@ -306,11 +295,10 @@ class ConversationService(
         }
 
         // Create new if not exists
-        return create1on1Conversation(targetUserId)
+        return create1on1Conversation(targetUserId, currentUserId)
     }
 
-    fun check1on1ConversationExists(targetUserId: String): String? {
-        val currentUserId = webUtil.getUserId()
+    fun check1on1ConversationExists(targetUserId: String, currentUserId: String): String? {
         return conversationRepository.findExisting1on1Conversation(currentUserId, targetUserId)
             .map { it.id }
             .orElse(null)

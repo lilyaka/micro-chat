@@ -21,7 +21,6 @@ class MessageReactionService(
             throw IllegalArgumentException("Invalid emoji format")
         }
 
-        // ✅ Wrap trong tenant context
         tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
             // Kiểm tra message tồn tại
             val message = chatService.getMessage(messageId)

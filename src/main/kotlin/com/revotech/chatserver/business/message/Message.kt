@@ -24,15 +24,16 @@ data class Message(
 
     // Tối ưu cho status tracking
     var deliveredAt: LocalDateTime? = null,
-    var deliveredIds: MutableSet<String> = mutableSetOf(), // Chỉ track trong nhóm nhỏ
+    var deliveredIds: MutableSet<String> = mutableSetOf(),
     var readAt: LocalDateTime? = null,
-    var lastReadAt: LocalDateTime? = null, // Thời gian read gần nhất
-    var readCount: Int = 0, // Đếm số người đã đọc (tối ưu cho nhóm lớn)
-    var deliveredCount: Int = 0 // Đếm số người đã nhận
+    var lastReadAt: LocalDateTime? = null,
+    var readCount: Int = 0,
+    var deliveredCount: Int = 0
 ) {
     var avatar: String? = ""
     var sender: String? = ""
     var replyMessage: Message? = null
+    var reactions: MutableList<MessageReactionResponse>? = mutableListOf()
 
     // Runtime status cho client
     var status: MessageStatus = MessageStatus.SENT
@@ -92,4 +93,10 @@ data class MessageDeliveryInfo(
     val readCount: Int,
     val isGroupChat: Boolean,
     val lastActivity: LocalDateTime?
+)
+
+data class MessageReactionResponse(
+    val emoji: String,
+    val count: Int,
+    val users: List<String>
 )

@@ -38,6 +38,8 @@ class ChatController(
 
     @MessageMapping("/chat/reaction")
     fun handleReaction(@Payload reactionPayload: ReactionPayload, principal: Principal) {
+        println("🔥 ChatController: Received reaction - messageId: ${reactionPayload.messageId}, emoji: ${reactionPayload.emoji}")
+
         val userId = principal.name
 
         if (reactionPayload.emoji.startsWith("remove_")) {

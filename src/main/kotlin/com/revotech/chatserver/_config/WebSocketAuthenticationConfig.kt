@@ -30,11 +30,16 @@ class CustomChannelInterceptor(
 
     override fun preSend(message: Message<*>, channel: MessageChannel): Message<*> {
         val accessor = MessageHeaderAccessor.getAccessor(message, StompHeaderAccessor::class.java)
+
+        // ✅ Log tất cả STOMP commands
+        println("🔥 WebSocket: Command=${accessor?.command}, Destination=${accessor?.destination}")
+
         if (StompCommand.CONNECT == accessor!!.command) {
             val authorization = accessor.getNativeHeader("Authorization")
             val accessToken = authorization!![0].split(" ").dropLastWhile { it.isEmpty() }.last()
             accessor.user = tokenHelper.toPrincipal(accessToken)
         }
+
         return message
     }
 }

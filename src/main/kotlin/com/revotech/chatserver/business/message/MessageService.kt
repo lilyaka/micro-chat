@@ -78,9 +78,7 @@ class MessageService(
         return message
     }
 
-    fun markAsReadMessage(conversationId: String): MutableList<Message> {
-        val userId = webUtil.getUserId()
-
+    fun markAsReadMessage(conversationId: String, userId: String): MutableList<Message> {
         // Track activity khi đọc tin nhắn
         userPresenceService.updateUserActivity(userId)
 
