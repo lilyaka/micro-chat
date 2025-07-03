@@ -47,10 +47,7 @@ class MessageService(
                     .type(MessageType.MESSAGE)
                     .build()
 
-                // Track user activity khi gửi message
                 userPresenceService.updateUserActivity(userId)
-
-                // ✅ CLEAR TYPING TRONG TENANT CONTEXT (GỌI INTERNAL METHOD)
                 typingService.clearTyping(conversationId, userId)
 
                 simpMessagingTemplate.convertAndSend(
@@ -78,12 +75,13 @@ class MessageService(
         return message
     }
 
-    fun markAsReadMessage(conversationId: String, userId: String): MutableList<Message> {
-        // Track activity khi đọc tin nhắn
-        userPresenceService.updateUserActivity(userId)
-
-        return readMessages(userId) {
-            findUnreadMessages(userId, conversationId)
+    // ✅ NEED TENANT CONTEXT - Queries/Updates database
+    fun markAsReadMessage(conversationId: String, userId: String, principal: Principal): MutableList<Message> {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            userPresenceService.updateUserActivity(userId)
+            readMessages(userId) {
+                findUnreadMessages(userId, conversationId)
+            }
         }
     }
 
@@ -100,30 +98,40 @@ class MessageService(
         return messageRepository.findByConversationIdAndReadIdsNotContains(conversationId, userId)
     }
 
-    fun searchMessageContent(keyword: String) = messageRepository.findByContent(keyword, MessageType.MESSAGE)
+    // ✅ NEED TENANT CONTEXT - Queries database
+    fun searchMessageContent(keyword: String, principal: Principal) =
+        tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            messageRepository.findByContent(keyword, MessageType.MESSAGE)
+        }
 
-    fun searchMessageAttachments(keyword: String) =
-        messageRepository.findByAttachmentsName(keyword, MessageType.MESSAGE)
+    // ✅ NEED TENANT CONTEXT - Queries database
+    fun searchMessageAttachments(keyword: String, principal: Principal) =
+        tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            messageRepository.findByAttachmentsName(keyword, MessageType.MESSAGE)
+        }
 
-    fun searchMessage(keyword: String): MutableList<Conversation> {
-        val contentMessages = searchMessageContent(keyword)
-        val attachmentMessages = searchMessageAttachments(keyword)
+    // ✅ NEED TENANT CONTEXT - Queries database
+    fun searchMessage(keyword: String, principal: Principal): MutableList<Conversation> {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val contentMessages = searchMessageContent(keyword, principal)
+            val attachmentMessages = searchMessageAttachments(keyword, principal)
 
-        val mapUser = HashMap<String, User?>()
-        val mapConversation = HashMap<String, Conversation>()
+            val mapUser = HashMap<String, User?>()
+            val mapConversation = HashMap<String, Conversation>()
 
-        return contentMessages.plus(attachmentMessages).sortedWith(compareBy({ it.conversationId }, { it.sentAt }))
-            .map {
-                val conversation = if (mapConversation.containsKey(it.conversationId)) {
-                    mapConversation[it.conversationId] as Conversation
-                } else {
-                    chatService.getConversation(it.conversationId)
-                }
-                getMessageInfo(mapUser, it)
-                conversation.lastMessage = it
+            contentMessages.plus(attachmentMessages).sortedWith(compareBy({ it.conversationId }, { it.sentAt }))
+                .map {
+                    val conversation = if (mapConversation.containsKey(it.conversationId)) {
+                        mapConversation[it.conversationId] as Conversation
+                    } else {
+                        chatService.getConversation(it.conversationId)
+                    }
+                    getMessageInfo(mapUser, it)
+                    conversation.lastMessage = it
 
-                conversation
-            }.toMutableList()
+                    conversation
+                }.toMutableList()
+        }
     }
 
     private fun getMessageInfo(mapUser: HashMap<String, User?>, message: Message) {
@@ -136,99 +144,97 @@ class MessageService(
         message.sender = mapUser[fromId]?.fullName ?: ""
     }
 
-    fun getAllHistory(conversationId: String) = messageRepository.findByConversationId(conversationId)
+    // ✅ NEED TENANT CONTEXT - Queries database
+    fun getAllHistory(conversationId: String, principal: Principal) =
+        tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            messageRepository.findByConversationId(conversationId)
+        }
 
-    fun getAttachment(attachmentId: String): Attachment? =
-        messageRepository.findAttachmentById(attachmentId).orElse(null)
+    // ✅ NEED TENANT CONTEXT - Queries database
+    fun getAttachment(attachmentId: String, principal: Principal): Attachment? =
+        tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            messageRepository.findAttachmentById(attachmentId).orElse(null)
+        }
 
-    /**
-     * Tìm page chứa target message và return context xung quanh
-     */
-    fun getMessageContext(conversationId: String, messageId: String, pageSize: Int = 20): MessageContextResponse {
-        // 1. Lấy target message
-        val targetMessage = chatService.getMessage(messageId)
+    // ✅ NEED TENANT CONTEXT - Queries database
+    fun getMessageContext(conversationId: String, messageId: String, pageSize: Int = 20, principal: Principal): MessageContextResponse {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val targetMessage = chatService.getMessage(messageId)
 
-        // 2. Đếm số messages newer than target
-        val newerMessagesCount = messageRepository.countMessagesNewerThan(
-            conversationId,
-            targetMessage.sentAt
-        )
+            val newerMessagesCount = messageRepository.countMessagesNewerThan(
+                conversationId,
+                targetMessage.sentAt
+            )
 
-        // 3. Tính page number chứa target message
-        val targetPageNumber = (newerMessagesCount / pageSize).toInt()
+            val targetPageNumber = (newerMessagesCount / pageSize).toInt()
 
-        // 4. Lấy messages từ page đó
-        val pageable = PageRequest.of(targetPageNumber, pageSize, Sort.by(Sort.Direction.DESC, "sentAt"))
-        val messagesPage = getHistories(conversationId, pageable)
+            val pageable = PageRequest.of(targetPageNumber, pageSize, Sort.by(Sort.Direction.DESC, "sentAt"))
+            val messagesPage = getHistories(conversationId, pageable)
 
-        // 5. Tìm index của target message trong page
-        val targetIndex = messagesPage.content.indexOfFirst { it.id == messageId }
+            val targetIndex = messagesPage.content.indexOfFirst { it.id == messageId }
 
-        return MessageContextResponse(
-            messages = messagesPage.content,
-            targetMessageId = messageId,
-            targetIndex = targetIndex,
-            pageNumber = targetPageNumber,
-            totalPages = messagesPage.totalPages,
-            totalElements = messagesPage.totalElements,
-            hasNext = messagesPage.hasNext(),
-            hasPrevious = messagesPage.hasPrevious()
-        )
+            MessageContextResponse(
+                messages = messagesPage.content,
+                targetMessageId = messageId,
+                targetIndex = targetIndex,
+                pageNumber = targetPageNumber,
+                totalPages = messagesPage.totalPages,
+                totalElements = messagesPage.totalElements,
+                hasNext = messagesPage.hasNext(),
+                hasPrevious = messagesPage.hasPrevious()
+            )
+        }
     }
 
-    /**
-     * Alternative: Lấy context xung quanh message với offset
-     */
+    // ✅ NEED TENANT CONTEXT - Queries database
     fun getMessageContextWithOffset(
         conversationId: String,
         messageId: String,
         beforeCount: Int = 10,
-        afterCount: Int = 10
+        afterCount: Int = 10,
+        principal: Principal
     ): MessageContextResponse {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val targetMessage = chatService.getMessage(messageId)
 
-        val targetMessage = chatService.getMessage(messageId)
+            val beforePageable = PageRequest.of(0, beforeCount, Sort.by(Sort.Direction.ASC, "sentAt"))
+            val messagesAfter = messageRepository.findByConversationIdAndSentAtGreaterThan(
+                conversationId, targetMessage.sentAt, beforePageable
+            ).content.reversed()
 
-        // Lấy messages before target (newer messages)
-        val beforePageable = PageRequest.of(0, beforeCount, Sort.by(Sort.Direction.ASC, "sentAt"))
-        val messagesAfter = messageRepository.findByConversationIdAndSentAtGreaterThan(
-            conversationId, targetMessage.sentAt, beforePageable
-        ).content.reversed() // Reverse để có thứ tự desc
+            val afterPageable = PageRequest.of(0, afterCount, Sort.by(Sort.Direction.DESC, "sentAt"))
+            val messagesBefore = messageRepository.findByConversationIdAndSentAtLessThan(
+                conversationId, targetMessage.sentAt, afterPageable
+            ).content
 
-        // Lấy messages after target (older messages)
-        val afterPageable = PageRequest.of(0, afterCount, Sort.by(Sort.Direction.DESC, "sentAt"))
-        val messagesBefore = messageRepository.findByConversationIdAndSentAtLessThan(
-            conversationId, targetMessage.sentAt, afterPageable
-        ).content
-
-        // Combine: newer + target + older
-        val allMessages = mutableListOf<Message>().apply {
-            addAll(messagesAfter)
-            add(targetMessage)
-            addAll(messagesBefore)
-        }
-
-        // Populate user info
-        val mapUser = HashMap<String, User?>()
-        allMessages.forEach { message ->
-            getMessageInfo(mapUser, message)
-
-            if (message.replyMessageId != null) {
-                val replyMessage = allMessages.find { it.id == message.replyMessageId }
-                    ?: chatService.getMessage(message.replyMessageId!!)
-                message.replyMessage = replyMessage
+            val allMessages = mutableListOf<Message>().apply {
+                addAll(messagesAfter)
+                add(targetMessage)
+                addAll(messagesBefore)
             }
-        }
 
-        return MessageContextResponse(
-            messages = allMessages,
-            targetMessageId = messageId,
-            targetIndex = messagesAfter.size, // Index của target message
-            pageNumber = -1, // Không áp dụng cho context mode
-            totalPages = -1,
-            totalElements = allMessages.size.toLong(),
-            hasNext = false,
-            hasPrevious = false
-        )
+            val mapUser = HashMap<String, User?>()
+            allMessages.forEach { message ->
+                getMessageInfo(mapUser, message)
+
+                if (message.replyMessageId != null) {
+                    val replyMessage = allMessages.find { it.id == message.replyMessageId }
+                        ?: chatService.getMessage(message.replyMessageId!!)
+                    message.replyMessage = replyMessage
+                }
+            }
+
+            MessageContextResponse(
+                messages = allMessages,
+                targetMessageId = messageId,
+                targetIndex = messagesAfter.size,
+                pageNumber = -1,
+                totalPages = -1,
+                totalElements = allMessages.size.toLong(),
+                hasNext = false,
+                hasPrevious = false
+            )
+        }
     }
 
     fun getHistories(conversationId: String, pageable: Pageable): Page<Message> {
@@ -253,7 +259,7 @@ class MessageService(
 data class MessageContextResponse(
     val messages: List<Message>,
     val targetMessageId: String,
-    val targetIndex: Int, // Index của target message trong list
+    val targetIndex: Int,
     val pageNumber: Int,
     val totalPages: Int,
     val totalElements: Long,

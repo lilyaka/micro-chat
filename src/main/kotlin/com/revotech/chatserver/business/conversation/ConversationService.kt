@@ -11,11 +11,14 @@ import com.revotech.chatserver.business.message.MessageType
 import com.revotech.chatserver.business.user.User
 import com.revotech.chatserver.business.user.UserService
 import com.revotech.chatserver.client.FileServiceClient
+import com.revotech.chatserver.helper.TenantHelper
 import com.revotech.chatserver.payload.*
 import com.revotech.util.StringUtils
 import com.revotech.util.WebUtil
 import org.springframework.messaging.simp.SimpMessagingTemplate
+import org.springframework.security.authentication.AbstractAuthenticationToken
 import org.springframework.stereotype.Service
+import java.security.Principal
 
 @Service
 class ConversationService(
@@ -26,28 +29,38 @@ class ConversationService(
     private val simpMessagingTemplate: SimpMessagingTemplate,
     private val fileServiceClient: FileServiceClient,
     private val webUtil: WebUtil,
+    private val tenantHelper: TenantHelper // ✅ Added TenantHelper
 ) {
-    fun searchConversation(keyword: String): MutableList<Conversation> {
-        val searchKeyword = StringUtils.convertAliasReverse(keyword)
-        return conversationRepository.findByNameRegex(searchKeyword)
+    // ✅ NEED TENANT CONTEXT - Queries database
+    fun searchConversation(keyword: String, principal: Principal): MutableList<Conversation> {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val searchKeyword = StringUtils.convertAliasReverse(keyword)
+            conversationRepository.findByNameRegex(searchKeyword)
+        }
     }
 
-    fun updateConversationName(conversationId: String, conversationName: String): Conversation {
-        val conversation = chatService.getConversation(conversationId)
-        conversation.name = conversationName
-        return conversationRepository.save(conversation)
+    // ✅ NEED TENANT CONTEXT - Queries/Updates database
+    fun updateConversationName(conversationId: String, conversationName: String, principal: Principal): Conversation {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val conversation = chatService.getConversation(conversationId)
+            conversation.name = conversationName
+            conversationRepository.save(conversation)
+        }
     }
 
-    fun getUserConversations(userId: String): List<Conversation> {
-        val mapUser = HashMap<String, User?>()
-        return conversationRepository.findUserConversation(userId).map {
-            it.unread = chatService.countUnreadMessage(it.id as String, userId)
-            setLastMessageSender(mapUser, it)
-            if (!it.isGroup) {
-                get1on1Info(mapUser, userId, it)
-            }
-            it
-        }.filter { it.name.isNotEmpty() }.sortedByDescending { it.lastMessage?.sentAt }
+    // ✅ NEED TENANT CONTEXT - Queries database
+    fun getUserConversations(userId: String, principal: Principal): List<Conversation> {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val mapUser = HashMap<String, User?>()
+            conversationRepository.findUserConversation(userId).map {
+                it.unread = chatService.countUnreadMessage(it.id as String, userId)
+                setLastMessageSender(mapUser, it)
+                if (!it.isGroup) {
+                    get1on1Info(mapUser, userId, it)
+                }
+                it
+            }.filter { it.name.isNotEmpty() }.sortedByDescending { it.lastMessage?.sentAt }
+        }
     }
 
     private fun get1on1Info(mapUser: HashMap<String, User?>, userId: String, conversation: Conversation) {
@@ -78,33 +91,30 @@ class ConversationService(
         conversation.lastMessage?.sender = mapUser[fromId]?.fullName ?: ""
     }
 
-    /**
-     * Tạo conversation thông minh:
-     * - 2 người: Tự động tạo 1-on-1 (kiểm tra existing trước)
-     * - >2 người: Tự động tạo nhóm
-     */
-    fun createConversation(conversationPayload: ConversationPayload, currentUserId: String): Conversation {
-        if (conversationPayload.members.isEmpty()) {
-            throw ConversationValidateException("conversationInvalid", "Cần ít nhất 1 người để tạo cuộc trò chuyện.")
-        }
-
-        val allMembers = conversationPayload.members.toMutableList().apply {
-            if (!contains(currentUserId)) add(currentUserId)
-        }
-
-        // Auto-detect conversation type based on member count
-        return when (allMembers.size) {
-            2 -> {
-                val targetUserId = allMembers.first { it != currentUserId }
-                findOrCreate1on1Conversation(targetUserId, currentUserId)
+    // ✅ NEED TENANT CONTEXT - Creates/Updates database
+    fun createConversation(conversationPayload: ConversationPayload, currentUserId: String, principal: Principal): Conversation {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            if (conversationPayload.members.isEmpty()) {
+                throw ConversationValidateException("conversationInvalid", "Cần ít nhất 1 người để tạo cuộc trò chuyện.")
             }
-            else -> {
-                createGroupConversation(conversationPayload, allMembers, currentUserId)
+
+            val allMembers = conversationPayload.members.toMutableList().apply {
+                if (!contains(currentUserId)) add(currentUserId)
+            }
+
+            when (allMembers.size) {
+                2 -> {
+                    val targetUserId = allMembers.first { it != currentUserId }
+                    findOrCreate1on1ConversationInternal(targetUserId, currentUserId)
+                }
+                else -> {
+                    createGroupConversationInternal(conversationPayload, allMembers, currentUserId)
+                }
             }
         }
     }
 
-    private fun createGroupConversation(conversationPayload: ConversationPayload, members: MutableList<String>, currentUserId: String): Conversation {
+    private fun createGroupConversationInternal(conversationPayload: ConversationPayload, members: MutableList<String>, currentUserId: String): Conversation {
         if (conversationPayload.name.isBlank()) {
             throw ConversationValidateException("groupNameRequired", "Tên nhóm không được để trống.")
         }
@@ -113,15 +123,14 @@ class ConversationService(
             null,
             conversationPayload.name,
             "",
-            true, // isGroup = true
+            true,
             currentUserId,
-            mutableListOf(currentUserId), // Creator làm admin
+            mutableListOf(currentUserId),
             members
         )
 
         conversation = conversationRepository.save(conversation)
 
-        // Notify other members
         members.filter { it != currentUserId }.forEach { memberId ->
             simpMessagingTemplate.convertAndSendToUser(
                 memberId,
@@ -133,17 +142,21 @@ class ConversationService(
         return conversation
     }
 
-    /**
-     * Tạo conversation 1-on-1, kiểm tra existing trước
-     */
-    fun create1on1Conversation(userId: String, currentUserId: String): Conversation {
+    // ✅ NEED TENANT CONTEXT - Queries/Creates database
+    fun create1on1Conversation(userId: String, currentUserId: String, principal: Principal): Conversation {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            findOrCreate1on1ConversationInternal(userId, currentUserId)
+        }
+    }
+
+    private fun findOrCreate1on1ConversationInternal(userId: String, currentUserId: String): Conversation {
         return conversationRepository.findExisting1on1Conversation(currentUserId, userId).orElseGet {
             val user = userService.getUser(userId)
             var conversation = Conversation(
                 null,
                 user?.fullName ?: "",
                 user?.avatar ?: "",
-                false, // isGroup = false
+                false,
                 currentUserId,
                 mutableListOf(),
                 mutableListOf(userId, currentUserId)
@@ -160,34 +173,34 @@ class ConversationService(
         }
     }
 
-    /**
-     * Tạo conversation từ group có sẵn
-     */
-    fun createGroupConversation(groupId: String, userId: String): Conversation {
-        return conversationRepository.findById(groupId).orElseGet {
-            val group = groupService.getGroup(groupId)
-            var conversation =
-                Conversation(
-                    groupId,
-                    group?.name ?: "",
-                    "",
-                    true,
-                    userId,
-                    group?.users?.filter { it.level == UserLevelInGroup.MANAGE }?.map { it.id }?.toMutableList()
-                        ?: mutableListOf(),
-                    group?.users?.map { it.id }?.toMutableList() ?: mutableListOf()
-                )
-            conversation = conversationRepository.save(conversation)
+    // ✅ NEED TENANT CONTEXT - Queries/Creates database
+    fun createGroupConversation(groupId: String, userId: String, principal: Principal): Conversation {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            conversationRepository.findById(groupId).orElseGet {
+                val group = groupService.getGroup(groupId)
+                var conversation =
+                    Conversation(
+                        groupId,
+                        group?.name ?: "",
+                        "",
+                        true,
+                        userId,
+                        group?.users?.filter { it.level == UserLevelInGroup.MANAGE }?.map { it.id }?.toMutableList()
+                            ?: mutableListOf(),
+                        group?.users?.map { it.id }?.toMutableList() ?: mutableListOf()
+                    )
+                conversation = conversationRepository.save(conversation)
 
-            conversation.members.filter { it != userId }.forEach {
-                simpMessagingTemplate.convertAndSendToUser(
-                    it,
-                    PRIVATE_CHANNEL_DESTINATION,
-                    NewConversationMessage(conversation)
-                )
+                conversation.members.filter { it != userId }.forEach {
+                    simpMessagingTemplate.convertAndSendToUser(
+                        it,
+                        PRIVATE_CHANNEL_DESTINATION,
+                        NewConversationMessage(conversation)
+                    )
+                }
+
+                conversation
             }
-
-            conversation
         }
     }
 
@@ -203,19 +216,23 @@ class ConversationService(
         return chatService.saveMessage(message)
     }
 
-    fun pinConversationMessage(conversationId: String, messageId: String): Conversation {
-        val conversation = chatService.getConversation(conversationId)
-        val message = chatService.getMessage(messageId)
-        conversation.pin = message
-
-        return conversationRepository.save(conversation)
+    // ✅ NEED TENANT CONTEXT - Queries/Updates database
+    fun pinConversationMessage(conversationId: String, messageId: String, principal: Principal): Conversation {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val conversation = chatService.getConversation(conversationId)
+            val message = chatService.getMessage(messageId)
+            conversation.pin = message
+            conversationRepository.save(conversation)
+        }
     }
 
-    fun unpinConversationMessage(conversationId: String, messageId: String): Conversation {
-        val conversation = chatService.getConversation(conversationId)
-        conversation.pin = null
-
-        return conversationRepository.save(conversation)
+    // ✅ NEED TENANT CONTEXT - Queries/Updates database
+    fun unpinConversationMessage(conversationId: String, messageId: String, principal: Principal): Conversation {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val conversation = chatService.getConversation(conversationId)
+            conversation.pin = null
+            conversationRepository.save(conversation)
+        }
     }
 
     fun addConversationMember(conversationId: String, memberIds: MutableList<String>, userId: String): Conversation {
@@ -284,23 +301,25 @@ class ConversationService(
     fun deleteConversationFolder(conversationId: String) =
         fileServiceClient.deleteChatConversation(webUtil.getHeaders(), conversationId)
 
-    fun getConversationAttachments(conversationId: String) =
-        conversationRepository.findConversationAttachments(conversationId)
-
-    fun findOrCreate1on1Conversation(targetUserId: String, currentUserId: String): Conversation {
-        // Check existing conversation
-        val existing = conversationRepository.findExisting1on1Conversation(currentUserId, targetUserId)
-        if (existing.isPresent) {
-            return existing.get()
+    // ✅ NEED TENANT CONTEXT - Queries database
+    fun getConversationAttachments(conversationId: String, principal: Principal) =
+        tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            conversationRepository.findConversationAttachments(conversationId)
         }
 
-        // Create new if not exists
-        return create1on1Conversation(targetUserId, currentUserId)
+    // ✅ NEED TENANT CONTEXT - Queries database
+    fun findOrCreate1on1Conversation(targetUserId: String, currentUserId: String, principal: Principal): Conversation {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            findOrCreate1on1ConversationInternal(targetUserId, currentUserId)
+        }
     }
 
-    fun check1on1ConversationExists(targetUserId: String, currentUserId: String): String? {
-        return conversationRepository.findExisting1on1Conversation(currentUserId, targetUserId)
-            .map { it.id }
-            .orElse(null)
+    // ✅ NEED TENANT CONTEXT - Queries database
+    fun check1on1ConversationExists(targetUserId: String, currentUserId: String, principal: Principal): String? {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            conversationRepository.findExisting1on1Conversation(currentUserId, targetUserId)
+                .map { it.id }
+                .orElse(null)
+        }
     }
 }

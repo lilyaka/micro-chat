@@ -8,14 +8,17 @@ import com.revotech.chatserver.business.exception.ConversationNotFoundException
 import com.revotech.chatserver.business.message.MessageService
 import com.revotech.chatserver.business.user.User
 import com.revotech.chatserver.business.user.UserService
+import com.revotech.chatserver.helper.TenantHelper
 import com.revotech.util.WebUtil
 import org.springframework.core.io.FileSystemResource
 import org.springframework.core.io.Resource
 import org.springframework.core.io.ResourceLoader
+import org.springframework.security.authentication.AbstractAuthenticationToken
 import org.springframework.stereotype.Service
 import java.io.File
 import java.io.FileOutputStream
 import java.nio.file.Files
+import java.security.Principal
 import java.util.zip.ZipEntry
 import java.util.zip.ZipOutputStream
 
@@ -25,36 +28,40 @@ class ExportHistoryService(
     private val messageService: MessageService,
     private val userService: UserService,
     private val webUtil: WebUtil,
-    private val webApplicationContext: ResourceLoader
+    private val webApplicationContext: ResourceLoader,
+    private val tenantHelper: TenantHelper // ✅ Added TenantHelper
 ) {
-    fun exportHistory(conversationId: String): Resource {
-        val conversation = chatService.getConversation(conversationId)
-        if (conversation.id == null) {
-            throw ConversationNotFoundException("conversationNotFound", "Conversation not found.")
-        }
-
-        val zipIn = Files.createTempFile(conversation.name, ".zip")
-        val fos = FileOutputStream(zipIn.toFile())
-        val zipOut = ZipOutputStream(fos)
-
-        val exportFolder = webApplicationContext.getResource("classpath:export").file
-
-        exportFolder.listFiles()?.forEach {
-            if (it.name == "js") {
-                val dataFile = exportMessage(conversation)
-                zipFileFolder(dataFile.file, "js${File.separator}data.js", zipOut)
+    // ✅ NEED TENANT CONTEXT - Queries database
+    fun exportHistory(conversationId: String, principal: Principal): Resource {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val conversation = chatService.getConversation(conversationId)
+            if (conversation.id == null) {
+                throw ConversationNotFoundException("conversationNotFound", "Conversation not found.")
             }
-            zipFileFolder(it, it.name, zipOut)
-        }
 
-        zipOut.close()
-        fos.close()
-        return FileSystemResource(zipIn)
+            val zipIn = Files.createTempFile(conversation.name, ".zip")
+            val fos = FileOutputStream(zipIn.toFile())
+            val zipOut = ZipOutputStream(fos)
+
+            val exportFolder = webApplicationContext.getResource("classpath:export").file
+
+            exportFolder.listFiles()?.forEach {
+                if (it.name == "js") {
+                    val dataFile = exportMessage(conversation, principal)
+                    zipFileFolder(dataFile.file, "js${File.separator}data.js", zipOut)
+                }
+                zipFileFolder(it, it.name, zipOut)
+            }
+
+            zipOut.close()
+            fos.close()
+            FileSystemResource(zipIn)
+        }
     }
 
-    private fun exportMessage(conversation: Conversation): Resource {
+    private fun exportMessage(conversation: Conversation, principal: Principal): Resource {
         val mapUser = HashMap<String, User?>()
-        val histories = messageService.getAllHistory(conversation.id!!)
+        val histories = messageService.getAllHistory(conversation.id!!, principal)
 
         histories.map {
             val fromId = it.fromUserId
