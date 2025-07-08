@@ -1,124 +1,64 @@
 package com.revotech.chatserver.controller
 
-import com.revotech.chatserver.business.group.GroupAction
-import com.revotech.chatserver.business.group.GroupPermissionService
 import com.revotech.chatserver.business.group.GroupSettingsService
 import com.revotech.chatserver.payload.AllowMembersAddMembersPayload
 import com.revotech.chatserver.payload.AllowMembersEditInfoPayload
 import com.revotech.chatserver.payload.AllowMembersPinMessagePayload
-import com.revotech.chatserver.payload.GroupSettingsUpdatePayload
 import com.revotech.chatserver.payload.GroupSettingsResponse
+import com.revotech.chatserver.payload.GroupSettingsUpdatePayload
 import com.revotech.chatserver.payload.RestrictMessagingPayload
+import com.revotech.util.WebUtil
 import org.springframework.web.bind.annotation.*
-import java.security.Principal
 
 @RestController
-@RequestMapping("/conversation")
+@RequestMapping("/group")
 class GroupSettingsController(
     private val groupSettingsService: GroupSettingsService,
-    private val groupPermissionService: GroupPermissionService
+    private val webUtil: WebUtil
 ) {
 
     @GetMapping("/{groupId}/settings")
-    fun getGroupSettings(@PathVariable groupId: String, principal: Principal): GroupSettingsResponse {
-        val userId = principal.name
-
-        // Soft permission check - log but allow
-        val canView = groupPermissionService.canPerformAction(groupId, userId, GroupAction.CHANGE_SETTINGS)
-        if (!canView) {
-            println("⚠️ WARNING: User $userId attempted to view settings for group $groupId without permission")
-        }
-
-        return groupSettingsService.getGroupSettings(groupId, userId, principal)
+    fun getGroupSettings(@PathVariable groupId: String): GroupSettingsResponse {
+        return groupSettingsService.getGroupSettings(groupId)
     }
 
     @PutMapping("/{groupId}/settings/restrict-messaging")
     fun updateRestrictMessaging(
         @PathVariable groupId: String,
-        @RequestBody payload: RestrictMessagingPayload,
-        principal: Principal
+        @RequestBody payload: RestrictMessagingPayload
     ): GroupSettingsResponse {
-        val userId = principal.name
-
-        // Soft permission check with warning
-        try {
-            groupPermissionService.validatePermission(groupId, userId, GroupAction.CHANGE_SETTINGS)
-        } catch (e: Exception) {
-            println("⚠️ WARNING: Permission denied but allowing: ${e.message}")
-        }
-
-        return groupSettingsService.updateRestrictMessaging(groupId, payload.restrictMessaging, userId, principal)
+        return groupSettingsService.updateRestrictMessaging(groupId, payload.restrictMessaging)
     }
 
     @PutMapping("/{groupId}/settings/allow-members-edit-info")
     fun updateAllowMembersEditInfo(
         @PathVariable groupId: String,
-        @RequestBody payload: AllowMembersEditInfoPayload,
-        principal: Principal
+        @RequestBody payload: AllowMembersEditInfoPayload
     ): GroupSettingsResponse {
-        val userId = principal.name
-
-        // Soft permission check with warning
-        try {
-            groupPermissionService.validatePermission(groupId, userId, GroupAction.CHANGE_SETTINGS)
-        } catch (e: Exception) {
-            println("⚠️ WARNING: Permission denied but allowing: ${e.message}")
-        }
-
-        return groupSettingsService.updateAllowMembersEditInfo(groupId, payload.allowMembersToEditInfo, userId, principal)
+        return groupSettingsService.updateAllowMembersEditInfo(groupId, payload.allowMembersToEditInfo)
     }
 
     @PutMapping("/{groupId}/settings/allow-members-pin-message")
     fun updateAllowMembersPinMessage(
         @PathVariable groupId: String,
-        @RequestBody payload: AllowMembersPinMessagePayload,
-        principal: Principal
+        @RequestBody payload: AllowMembersPinMessagePayload
     ): GroupSettingsResponse {
-        val userId = principal.name
-
-        // Soft permission check with warning
-        try {
-            groupPermissionService.validatePermission(groupId, userId, GroupAction.CHANGE_SETTINGS)
-        } catch (e: Exception) {
-            println("⚠️ WARNING: Permission denied but allowing: ${e.message}")
-        }
-
-        return groupSettingsService.updateAllowMembersPinMessage(groupId, payload.allowMembersToPinMessage, userId, principal)
+        return groupSettingsService.updateAllowMembersPinMessage(groupId, payload.allowMembersToPinMessage)
     }
 
     @PutMapping("/{groupId}/settings/allow-members-add-members")
     fun updateAllowMembersAddMembers(
         @PathVariable groupId: String,
-        @RequestBody payload: AllowMembersAddMembersPayload,
-        principal: Principal
+        @RequestBody payload: AllowMembersAddMembersPayload
     ): GroupSettingsResponse {
-        val userId = principal.name
-
-        // Soft permission check with warning
-        try {
-            groupPermissionService.validatePermission(groupId, userId, GroupAction.CHANGE_SETTINGS)
-        } catch (e: Exception) {
-            println("⚠️ WARNING: Permission denied but allowing: ${e.message}")
-        }
-
-        return groupSettingsService.updateAllowMembersAddMembers(groupId, payload.allowMembersToAddMembers, userId, principal)
+        return groupSettingsService.updateAllowMembersAddMembers(groupId, payload.allowMembersToAddMembers)
     }
 
     @PutMapping("/{groupId}/settings/batch")
     fun updateGroupSettingsBatch(
         @PathVariable groupId: String,
-        @RequestBody payload: GroupSettingsUpdatePayload,
-        principal: Principal
+        @RequestBody payload: GroupSettingsUpdatePayload
     ): GroupSettingsResponse {
-        val userId = principal.name
-
-        // Soft permission check with warning
-        try {
-            groupPermissionService.validatePermission(groupId, userId, GroupAction.CHANGE_SETTINGS)
-        } catch (e: Exception) {
-            println("⚠️ WARNING: Permission denied but allowing: ${e.message}")
-        }
-
-        return groupSettingsService.updateGroupSettings(groupId, payload, userId, principal)
+        return groupSettingsService.updateGroupSettings(groupId, payload)
     }
 }
