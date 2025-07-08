@@ -1,41 +1,30 @@
 package com.revotech.chatserver.controller
 
 import com.revotech.chatserver.business.presence.UserPresenceService
-import com.revotech.chatserver.helper.TenantHelper
-import org.springframework.security.authentication.AbstractAuthenticationToken
 import org.springframework.web.bind.annotation.*
 import java.security.Principal
 
 @RestController
 @RequestMapping("/presence")
 class PresenceController(
-    private val userPresenceService: UserPresenceService,
-    private val tenantHelper: TenantHelper // ✅ Added TenantHelper
+    private val userPresenceService: UserPresenceService
 ) {
 
     @GetMapping("/online")
-    fun getOnlineUsers(principal: Principal): List<String> =
-        tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
-            userPresenceService.getOnlineUsers()
-        }
+    fun getOnlineUsers(): List<String> {
+        return userPresenceService.getOnlineUsers()
+    }
 
     @PostMapping("/status")
-    fun getUsersStatus(
-        @RequestBody userIds: List<String>,
-        principal: Principal // ✅ Added principal
-    ) = tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+    fun getUsersStatus(@RequestBody userIds: List<String>) =
         userPresenceService.getUsersPresence(userIds)
-    }
 
     @GetMapping("/me")
     fun getMyPresence(principal: Principal) =
-        tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
-            userPresenceService.getUserPresence(principal.name)
-        }
+        userPresenceService.getUserPresence(principal.name)
 
     @PostMapping("/activity")
-    fun updateActivity(principal: Principal) =
-        tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
-            userPresenceService.updateUserActivity(principal.name)
-        }
+    fun updateActivity(principal: Principal) {
+        userPresenceService.updateUserActivity(principal.name)
+    }
 }

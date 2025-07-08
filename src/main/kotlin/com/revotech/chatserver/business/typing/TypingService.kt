@@ -4,7 +4,6 @@ import com.revotech.chatserver.business.CHAT_DESTINATION
 import com.revotech.chatserver.business.user.UserService
 import com.revotech.chatserver.helper.TenantHelper
 import org.springframework.messaging.simp.SimpMessagingTemplate
-import org.springframework.scheduling.annotation.Scheduled
 import org.springframework.security.authentication.AbstractAuthenticationToken
 import org.springframework.stereotype.Service
 import java.security.Principal
@@ -17,33 +16,18 @@ class TypingService(
     private val userService: UserService,
     private val tenantHelper: TenantHelper
 ) {
-    // Map<conversationId, Map<userId, TypingUser>>
     private val typingUsers = ConcurrentHashMap<String, ConcurrentHashMap<String, TypingUser>>()
 
-    // Timeout sau 3 giây không có activity
-    private val TYPING_TIMEOUT_SECONDS = 3L
-
-    fun handleTyping(typingPayload: TypingPayload, principal: Principal) {
-        val userId = principal.name
+    fun handleTyping(conversationId: String, userId: String, isTyping: Boolean, principal: Principal) {
         tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
-            typingPayload.run {
-                handleTypingInternal(conversationId, userId, isTyping)
-            }
+            handleTypingInternal(conversationId, userId, isTyping, principal)
         }
     }
 
-    fun handleTyping(conversationId: String, userId: String, isTyping: Boolean) {
-        // Method này sẽ được gọi từ handleTyping(payload, principal) với tenant context
-        handleTypingInternal(conversationId, userId, isTyping)
-    }
-
-    private fun handleTypingInternal(conversationId: String, userId: String, isTyping: Boolean) {
-        println("🔥 TypingService: handleTypingInternal - conversationId=$conversationId, userId=$userId, isTyping=$isTyping")
+    private fun handleTypingInternal(conversationId: String, userId: String, isTyping: Boolean, principal: Principal) {
 
         val user = userService.getUser(userId)
         val userName = user?.fullName ?: "Unknown User"
-
-        println("🔥 TypingService: Found user name: $userName")
 
         if (isTyping) {
             startTyping(conversationId, userId, userName)
@@ -55,30 +39,21 @@ class TypingService(
     }
 
     private fun startTyping(conversationId: String, userId: String, userName: String) {
-        println("🔥 TypingService: startTyping - conversationId=$conversationId, userId=$userId, userName=$userName")
-
         typingUsers.computeIfAbsent(conversationId) { ConcurrentHashMap() }
         typingUsers[conversationId]!![userId] = TypingUser(userId, userName, LocalDateTime.now())
-
-        println("🔥 TypingService: Current typing users in conversation $conversationId: ${typingUsers[conversationId]?.size ?: 0}")
     }
 
     private fun stopTyping(conversationId: String, userId: String) {
-        println("🔥 TypingService: stopTyping - conversationId=$conversationId, userId=$userId")
 
         typingUsers[conversationId]?.remove(userId)
         if (typingUsers[conversationId]?.isEmpty() == true) {
             typingUsers.remove(conversationId)
         }
 
-        println("🔥 TypingService: Remaining typing users in conversation $conversationId: ${typingUsers[conversationId]?.size ?: 0}")
     }
 
     private fun broadcastTypingUpdate(conversationId: String) {
         val currentTypingUsers = typingUsers[conversationId]?.values?.toList() ?: emptyList()
-
-        println("🔥 TypingService: Broadcasting typing update for conversation $conversationId")
-        println("🔥 TypingService: Current typing users: ${currentTypingUsers.map { it.userName }}")
 
         val message = TypingUpdateMessage(
             conversationId = conversationId,
@@ -86,52 +61,81 @@ class TypingService(
         )
 
         val destination = "$CHAT_DESTINATION/typing/$conversationId"
-        println("🔥 TypingService: Broadcasting to destination: $destination")
-        println("🔥 TypingService: Message content: $message")
 
         try {
-            // Broadcast đến tất cả users trong conversation
             simpMessagingTemplate.convertAndSend(destination, message)
-            println("✅ TypingService: Successfully broadcasted typing update")
         } catch (e: Exception) {
             println("❌ TypingService: Error broadcasting typing update: ${e.message}")
             e.printStackTrace()
         }
     }
 
-    // Auto cleanup typing users sau timeout
-    @Scheduled(fixedRate = 1000) // Check mỗi giây
-    fun cleanupExpiredTyping() {
-        val now = LocalDateTime.now()
+    fun cleanupUserTyping(userId: String) {
+
+        val conversationsToUpdate = mutableSetOf<String>()
 
         typingUsers.forEach { (conversationId, userMap) ->
-            val expiredUsers = userMap.filterValues {
-                it.startTime.plusSeconds(TYPING_TIMEOUT_SECONDS).isBefore(now)
-            }
+            if (userMap.containsKey(userId)) {
+                userMap.remove(userId)
+                conversationsToUpdate.add(conversationId)
 
-            if (expiredUsers.isNotEmpty()) {
-                println("🔥 TypingService: Cleaning up ${expiredUsers.size} expired typing users in conversation $conversationId")
-
-                expiredUsers.keys.forEach { userId ->
-                    userMap.remove(userId)
-                }
-
+                // Remove empty conversations
                 if (userMap.isEmpty()) {
                     typingUsers.remove(conversationId)
-                } else {
-                    broadcastTypingUpdate(conversationId)
                 }
             }
         }
+
+        // Broadcast updates for affected conversations
+        conversationsToUpdate.forEach { conversationId ->
+            broadcastTypingUpdate(conversationId)
+        }
+
     }
 
+    fun cleanupConversationTyping(conversationId: String) {
+        println("🔥 TypingService: cleanupConversationTyping for conversation: $conversationId")
+
+        if (typingUsers.remove(conversationId) != null) {
+            println("🔥 TypingService: Removed all typing users for conversation: $conversationId")
+        }
+    }
+
+    // ✅ NEW: Cleanup typing for multiple users (bulk operation)
+    fun cleanupUsersTyping(userIds: List<String>) {
+
+        userIds.forEach { userId ->
+            cleanupUserTyping(userId)
+        }
+    }
+
+    // ✅ NEW: Get current typing users (for debugging/monitoring)
     fun getTypingUsers(conversationId: String): List<TypingUser> {
         return typingUsers[conversationId]?.values?.toList() ?: emptyList()
     }
 
-    // Clear typing khi user send message - cần tenant context
-    fun clearTyping(conversationId: String, userId: String) {
-        println("🔥 TypingService: clearTyping called - conversationId=$conversationId, userId=$userId")
-        handleTypingInternal(conversationId, userId, false)
+    // ✅ NEW: Get all typing stats (for debugging/monitoring)
+    fun getTypingStats(): Map<String, Any> {
+        val totalConversations = typingUsers.size
+        val totalTypingUsers = typingUsers.values.sumOf { it.size }
+
+        return mapOf(
+            "totalConversations" to totalConversations,
+            "totalTypingUsers" to totalTypingUsers,
+            "conversations" to typingUsers.mapValues { (_, userMap) ->
+                userMap.mapValues { (_, typingUser) ->
+                    mapOf(
+                        "userName" to typingUser.userName,
+                        "startTime" to typingUser.startTime.toString()
+                    )
+                }
+            }
+        )
+    }
+
+    fun clearTyping(conversationId: String, userId: String, principal: Principal) {
+        tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            handleTypingInternal(conversationId, userId, false, principal)
+        }
     }
 }

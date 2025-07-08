@@ -7,13 +7,16 @@ import com.revotech.chatserver.business.message.Message
 import com.revotech.chatserver.business.message.MessageRepository
 import com.revotech.chatserver.business.message.MessageStatus
 import com.revotech.chatserver.business.message.MessageDeliveryInfo
+import com.revotech.chatserver.helper.TenantHelper
 import com.revotech.util.WebUtil
 import org.springframework.data.mongodb.core.MongoTemplate
 import org.springframework.data.mongodb.core.query.Criteria
 import org.springframework.data.mongodb.core.query.Query
 import org.springframework.data.mongodb.core.query.Update
 import org.springframework.messaging.simp.SimpMessagingTemplate
+import org.springframework.security.authentication.AbstractAuthenticationToken
 import org.springframework.stereotype.Service
+import java.security.Principal
 import java.time.LocalDateTime
 
 @Service
@@ -23,35 +26,66 @@ class MessageStatusService(
     private val mongoTemplate: MongoTemplate,
     private val simpMessagingTemplate: SimpMessagingTemplate,
     private val chatService: ChatService,
-    private val webUtil: WebUtil
+    private val webUtil: WebUtil,
+    private val tenantHelper: TenantHelper
 ) {
 
     companion object {
-        private const val GROUP_SIZE_THRESHOLD = 20 // Nhóm > 20 người dùng counter thay vì list
-        private const val BATCH_UPDATE_SIZE = 50 // Batch size cho update
+        private const val GROUP_SIZE_THRESHOLD = 20
+        private const val BATCH_UPDATE_SIZE = 50
     }
 
-    fun markAsDelivered(messageId: String, userId: String) {
-        val message = chatService.getMessage(messageId)
-        val conversation = chatService.getConversation(message.conversationId)
+    fun markAsDelivered(messageId: String, userId: String, principal: Principal) {
+        tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val message = chatService.getMessage(messageId)
+            val conversation = chatService.getConversation(message.conversationId)
 
-        if (message.fromUserId == userId) return // Người gửi không cần mark delivered
+            if (message.fromUserId == userId) return@changeTenant
 
-        val isLargeGroup = conversation.members.size > GROUP_SIZE_THRESHOLD
+            val isLargeGroup = conversation.members.size > GROUP_SIZE_THRESHOLD
 
-        if (isLargeGroup) {
-            // Nhóm lớn: chỉ increment counter
-            incrementDeliveredCount(messageId)
-        } else {
-            // Nhóm nhỏ: track individual users
-            addToDeliveredIds(messageId, userId)
+            if (isLargeGroup) {
+                incrementDeliveredCount(messageId)
+            } else {
+                addToDeliveredIds(messageId, userId)
+            }
+
+            broadcastStatusUpdate(message, conversation.members.size, isLargeGroup)
         }
-
-        // Broadcast status update
-        broadcastStatusUpdate(message, conversation.members.size, isLargeGroup)
     }
 
-    fun markAsRead(messageId: String, userId: String) {
+    fun markAsRead(messageId: String, userId: String, principal: Principal) {
+        tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val message = chatService.getMessage(messageId)
+            val conversation = chatService.getConversation(message.conversationId)
+
+            if (message.fromUserId == userId) return@changeTenant
+
+            val isLargeGroup = conversation.members.size > GROUP_SIZE_THRESHOLD
+
+            if (isLargeGroup) {
+                incrementReadCount(messageId, userId)
+            } else {
+                addToReadIds(messageId, userId)
+            }
+
+            broadcastStatusUpdate(message, conversation.members.size, isLargeGroup)
+        }
+    }
+
+    fun markConversationAsRead(conversationId: String, userId: String, principal: Principal) {
+        tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val unreadMessages = messageRepository.findByConversationIdAndReadIdsNotContains(conversationId, userId)
+
+            unreadMessages.chunked(BATCH_UPDATE_SIZE).forEach { batch ->
+                batch.forEach { message ->
+                    markAsReadInternal(message.id!!, userId)
+                }
+            }
+        }
+    }
+
+    private fun markAsReadInternal(messageId: String, userId: String) {
         val message = chatService.getMessage(messageId)
         val conversation = chatService.getConversation(message.conversationId)
 
@@ -60,26 +94,12 @@ class MessageStatusService(
         val isLargeGroup = conversation.members.size > GROUP_SIZE_THRESHOLD
 
         if (isLargeGroup) {
-            // Nhóm lớn: chỉ increment counter và update timestamp
             incrementReadCount(messageId, userId)
         } else {
-            // Nhóm nhỏ: track individual users
             addToReadIds(messageId, userId)
         }
 
         broadcastStatusUpdate(message, conversation.members.size, isLargeGroup)
-    }
-
-    fun markConversationAsRead(conversationId: String, userId: String) {
-        // Batch update tất cả unread messages trong conversation
-        val unreadMessages = messageRepository.findByConversationIdAndReadIdsNotContains(conversationId, userId)
-
-        // Process in batches để tránh overload
-        unreadMessages.chunked(BATCH_UPDATE_SIZE).forEach { batch ->
-            batch.forEach { message ->
-                markAsRead(message.id!!, userId)
-            }
-        }
     }
 
     private fun incrementDeliveredCount(messageId: String) {
@@ -96,7 +116,7 @@ class MessageStatusService(
         val update = Update()
             .inc("readCount", 1)
             .set("lastReadAt", LocalDateTime.now())
-            .addToSet("readIds", userId) // Vẫn cần track để tránh duplicate
+            .addToSet("readIds", userId)
 
         mongoTemplate.updateFirst(query, update, Message::class.java)
     }
@@ -121,18 +141,16 @@ class MessageStatusService(
     }
 
     private fun broadcastStatusUpdate(message: Message, totalMembers: Int, isLargeGroup: Boolean) {
-        // Lấy thông tin mới nhất
         val updatedMessage = chatService.getMessage(message.id!!)
 
         val deliveryInfo = MessageDeliveryInfo(
-            totalMembers = totalMembers - 1, // Trừ người gửi
+            totalMembers = totalMembers - 1,
             deliveredCount = if (isLargeGroup) updatedMessage.deliveredCount else updatedMessage.deliveredIds.size,
             readCount = if (isLargeGroup) updatedMessage.readCount else updatedMessage.readIds?.size ?: 0,
             isGroupChat = totalMembers > 2,
             lastActivity = updatedMessage.lastReadAt ?: updatedMessage.deliveredAt
         )
 
-        // Determine status
         val status = when {
             deliveryInfo.readCount > 0 -> MessageStatus.READ
             deliveryInfo.deliveredCount > 0 -> MessageStatus.DELIVERED
@@ -146,7 +164,6 @@ class MessageStatusService(
             timestamp = LocalDateTime.now()
         )
 
-        // Chỉ gửi cho người gửi tin nhắn
         simpMessagingTemplate.convertAndSendToUser(
             message.fromUserId,
             "$CHAT_DESTINATION/status",
@@ -154,50 +171,69 @@ class MessageStatusService(
         )
     }
 
-    fun getMessageStatus(messageId: String): MessageStatusUpdate? {
-        val message = chatService.getMessage(messageId)
-        val conversation = chatService.getConversation(message.conversationId)
-        val isLargeGroup = conversation.members.size > GROUP_SIZE_THRESHOLD
+    fun getMessageStatus(messageId: String, principal: Principal): MessageStatusUpdate? {
+        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val message = chatService.getMessage(messageId)
+            val conversation = chatService.getConversation(message.conversationId)
+            val isLargeGroup = conversation.members.size > GROUP_SIZE_THRESHOLD
 
-        val deliveryInfo = MessageDeliveryInfo(
-            totalMembers = conversation.members.size - 1,
-            deliveredCount = if (isLargeGroup) message.deliveredCount else message.deliveredIds.size,
-            readCount = if (isLargeGroup) message.readCount else message.readIds?.size ?: 0,
-            isGroupChat = conversation.members.size > 2,
-            lastActivity = message.lastReadAt ?: message.deliveredAt
-        )
-
-        val status = when {
-            deliveryInfo.readCount > 0 -> MessageStatus.READ
-            deliveryInfo.deliveredCount > 0 -> MessageStatus.DELIVERED
-            else -> MessageStatus.SENT
-        }
-
-        return MessageStatusUpdate(
-            messageId = messageId,
-            status = status,
-            deliveryInfo = deliveryInfo,
-            timestamp = LocalDateTime.now()
-        )
-    }
-
-    // Tự động mark delivered khi user online và có tin nhắn mới
-    fun handleUserOnline(userId: String) {
-        // Tìm các conversation mà user tham gia
-        val conversations = conversationRepository.findUserConversation(userId)
-
-        conversations.forEach { conversation ->
-            // Mark delivered cho các tin nhắn chưa delivered gần đây (trong 24h)
-            val recentMessages = messageRepository.findRecentUndeliveredMessages(
-                conversation.id!!,
-                userId,
-                LocalDateTime.now().minusHours(24)
+            val deliveryInfo = MessageDeliveryInfo(
+                totalMembers = conversation.members.size - 1,
+                deliveredCount = if (isLargeGroup) message.deliveredCount else message.deliveredIds.size,
+                readCount = if (isLargeGroup) message.readCount else message.readIds?.size ?: 0,
+                isGroupChat = conversation.members.size > 2,
+                lastActivity = message.lastReadAt ?: message.deliveredAt
             )
 
-            recentMessages.forEach { message ->
-                markAsDelivered(message.id!!, userId)
+            val status = when {
+                deliveryInfo.readCount > 0 -> MessageStatus.READ
+                deliveryInfo.deliveredCount > 0 -> MessageStatus.DELIVERED
+                else -> MessageStatus.SENT
+            }
+
+            MessageStatusUpdate(
+                messageId = messageId,
+                status = status,
+                deliveryInfo = deliveryInfo,
+                timestamp = LocalDateTime.now()
+            )
+        }
+    }
+
+    fun handleUserOnline(userId: String, principal: Principal) {
+        tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            val conversations = conversationRepository.findUserConversation(userId)
+            val cutoffTime = LocalDateTime.now().minusHours(24)
+
+            conversations.forEach { conversation ->
+                val recentMessages = messageRepository.findRecentUndeliveredMessages(
+                    conversation.id!!,
+                    userId,
+                    cutoffTime
+                )
+
+                recentMessages.forEach { message ->
+                    markAsDeliveredInternal(message.id!!, userId)
+                }
             }
         }
+    }
+
+    private fun markAsDeliveredInternal(messageId: String, userId: String) {
+        val message = chatService.getMessage(messageId)
+        val conversation = chatService.getConversation(message.conversationId)
+
+        if (message.fromUserId == userId) return
+
+        val isLargeGroup = conversation.members.size > GROUP_SIZE_THRESHOLD
+
+        if (isLargeGroup) {
+            incrementDeliveredCount(messageId)
+        } else {
+            addToDeliveredIds(messageId, userId)
+        }
+
+        broadcastStatusUpdate(message, conversation.members.size, isLargeGroup)
     }
 }
 

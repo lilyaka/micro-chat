@@ -36,4 +36,8 @@ class TokenHelper(
         val claims = jwtUtil.getClaims(accessToken)
         return claims["tenant"] as String?
     }
+
+    fun getClaims(accessToken: String): Claims {
+        return jwtUtil.getClaims(accessToken)
+    }
 }

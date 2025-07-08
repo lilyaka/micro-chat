@@ -15,27 +15,30 @@ class MessageReactionService(
     private val tenantHelper: TenantHelper
 ) {
 
-    // ✅ ĐÃ CÓ MULTI-TENANT
     fun addReaction(messageId: String, emoji: String, userId: String, principal: Principal) {
+        // Validation emoji format
         if (emoji.isBlank() || emoji.length > 10) {
             throw IllegalArgumentException("Invalid emoji format")
         }
 
         tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
+            // Kiểm tra message tồn tại
             val message = chatService.getMessage(messageId)
 
+            // Kiểm tra user đã react với emoji này chưa
             val existing = reactionRepository.findByMessageIdAndUserId(messageId, userId)
                 .find { it.emoji == emoji }
 
             if (existing == null) {
                 val reaction = MessageReaction(null, messageId, userId, emoji)
                 reactionRepository.save(reaction)
+
+                // Broadcast reaction update
                 broadcastReactionUpdate(message.conversationId, messageId)
             }
         }
     }
 
-    // ✅ ĐÃ CÓ MULTI-TENANT
     fun removeReaction(messageId: String, emoji: String, userId: String, principal: Principal) {
         tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
             reactionRepository.deleteByMessageIdAndUserIdAndEmoji(messageId, userId, emoji)
@@ -58,11 +61,8 @@ class MessageReactionService(
         )
     }
 
-    // ✅ NEED TENANT CONTEXT - Queries database
-    fun getReactionSummary(messageId: String, principal: Principal): List<ReactionSummary> {
-        return tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
-            reactionRepository.getReactionSummary(messageId)
-        }
+    fun getReactionSummary(messageId: String): List<ReactionSummary> {
+        return reactionRepository.getReactionSummary(messageId)
     }
 }
 

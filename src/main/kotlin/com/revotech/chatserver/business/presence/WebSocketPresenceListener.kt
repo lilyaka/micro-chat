@@ -21,6 +21,15 @@ class WebSocketPresenceListener(
     private val userPresenceService: UserPresenceService by lazy {
         applicationContext.getBean(UserPresenceService::class.java)
     }
+    
+    private val typingService by lazy {
+        try {
+            applicationContext.getBean("typingService", com.revotech.chatserver.business.typing.TypingService::class.java)
+        } catch (e: Exception) {
+            println("TypingService not found: ${e.message}")
+            null
+        }
+    }
 
     @EventListener
     fun handleWebSocketConnectListener(event: SessionConnectEvent) {
@@ -34,7 +43,7 @@ class WebSocketPresenceListener(
             try {
                 userPresenceService.addUserSession(userId, sessionId)
             } catch (e: Exception) {
-                println("Failed to add user session: ${e.message}")
+                println("❌ WebSocketPresenceListener: Failed to add user session: ${e.message}")
             }
         }
     }
@@ -49,9 +58,13 @@ class WebSocketPresenceListener(
             val sessionId = headerAccessor.sessionId ?: return
 
             try {
+                // ✅ Cleanup presence
                 userPresenceService.removeUserSession(userId, sessionId)
+
+                typingService?.cleanupUserTyping(userId)
+
             } catch (e: Exception) {
-                println("Failed to remove user session: ${e.message}")
+                println("❌ WebSocketPresenceListener: Failed to cleanup user session: ${e.message}")
             }
         }
     }
