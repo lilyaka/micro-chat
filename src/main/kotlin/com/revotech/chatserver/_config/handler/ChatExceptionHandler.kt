@@ -1,5 +1,7 @@
 package com.revotech.chatserver._config.handler
 
+import com.revotech.chatserver.business.exception.GroupException
+import com.revotech.chatserver.business.exception.GroupPermissionException
 import com.revotech.chatserver.business.exception.MessageException
 import com.revotech.payload.ErrorPayload
 import org.slf4j.LoggerFactory
@@ -24,6 +26,21 @@ class ChatExceptionHandler {
     @ExceptionHandler(MessageException::class)
     @ResponseStatus(HttpStatus.NOT_FOUND)
     fun handleUserException(ex: MessageException): ErrorPayload {
+        return ErrorPayload(ex.code, ex.message ?: "")
+    }
+
+    // ✅ ADDED: Group exception handlers
+    @ExceptionHandler(GroupException::class)
+    @ResponseStatus(HttpStatus.NOT_FOUND)
+    fun handleGroupException(ex: GroupException): ErrorPayload {
+        log.error("Group error: ${ex.code} - ${ex.message}")
+        return ErrorPayload(ex.code, ex.message ?: "")
+    }
+
+    @ExceptionHandler(GroupPermissionException::class)
+    @ResponseStatus(HttpStatus.FORBIDDEN)
+    fun handleGroupPermissionException(ex: GroupPermissionException): ErrorPayload {
+        log.warn("Permission denied: ${ex.code} - ${ex.message}")
         return ErrorPayload(ex.code, ex.message ?: "")
     }
 }

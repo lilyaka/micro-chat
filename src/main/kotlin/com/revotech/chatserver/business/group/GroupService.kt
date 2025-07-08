@@ -5,7 +5,10 @@ import com.revotech.util.WebUtil
 import org.springframework.stereotype.Service
 
 @Service
-class GroupService(private val groupRepository: GroupRepository, private val webUtil: WebUtil) {
+class GroupService(
+    private val groupRepository: GroupRepository,
+    private val webUtil: WebUtil
+) {
     fun getGroup(groupId: String): Group? = groupRepository.findById(groupId).orElse(null)
 
     fun searchGroupUserIn(keyword: String): MutableList<Group> {

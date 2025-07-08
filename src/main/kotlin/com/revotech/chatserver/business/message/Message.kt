@@ -80,11 +80,9 @@ enum class MessageType {
 }
 
 enum class MessageStatus {
-    SENDING,
     SENT,
     DELIVERED,
     READ,
-    FAILED
 }
 
 data class MessageDeliveryInfo(

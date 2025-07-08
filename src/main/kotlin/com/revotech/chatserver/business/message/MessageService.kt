@@ -4,6 +4,8 @@ import com.revotech.chatserver.business.CHAT_DESTINATION
 import com.revotech.chatserver.business.ChatService
 import com.revotech.chatserver.business.attachment.Attachment
 import com.revotech.chatserver.business.conversation.Conversation
+import com.revotech.chatserver.business.exception.GroupPermissionException
+import com.revotech.chatserver.business.group.GroupPermissionService
 import com.revotech.chatserver.business.presence.UserPresenceService
 import com.revotech.chatserver.business.reaction.MessageReactionService
 import com.revotech.chatserver.business.typing.TypingService
@@ -31,7 +33,8 @@ class MessageService(
     private val webUtil: WebUtil,
     private val userPresenceService: UserPresenceService,
     private val typingService: TypingService,
-    private val messageReactionService: MessageReactionService // ✅ Thêm dependency
+    private val messageReactionService: MessageReactionService,
+    private val groupPermissionService: GroupPermissionService // ✅ ADDED
 ) {
     fun sendMessage(messagePayload: MessagePayload, principal: Principal) {
         val userId = principal.name
@@ -39,6 +42,16 @@ class MessageService(
         tenantHelper.changeTenant(principal as AbstractAuthenticationToken) {
             messagePayload.run {
                 val conversation = chatService.getConversation(conversationId)
+
+                if (conversation.isGroup) {
+                    val canSendMessage = groupPermissionService.canSendMessage(conversationId, userId)
+                    if (!canSendMessage) {
+                        throw GroupPermissionException(
+                            "messagingRestricted",
+                            "You don't have permission to send messages in this group"
+                        )
+                    }
+                }
 
                 val message = Message.Builder()
                     .fromUserId(userId)

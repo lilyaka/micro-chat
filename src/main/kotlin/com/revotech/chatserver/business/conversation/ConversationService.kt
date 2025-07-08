@@ -4,6 +4,7 @@ import com.revotech.chatserver.business.ChatService
 import com.revotech.chatserver.business.PRIVATE_CHANNEL_DESTINATION
 import com.revotech.chatserver.business.aop.AfterDeleteConversation
 import com.revotech.chatserver.business.exception.ConversationValidateException
+import com.revotech.chatserver.business.group.GroupPermissionService
 import com.revotech.chatserver.business.group.GroupService
 import com.revotech.chatserver.business.group.UserLevelInGroup
 import com.revotech.chatserver.business.message.Message
@@ -26,32 +27,41 @@ class ConversationService(
     private val simpMessagingTemplate: SimpMessagingTemplate,
     private val fileServiceClient: FileServiceClient,
     private val webUtil: WebUtil,
+    private val groupPermissionService: GroupPermissionService
 ) {
-    fun searchConversation(keyword: String): MutableList<Conversation> {
-        val searchKeyword = StringUtils.convertAliasReverse(keyword)
-        return conversationRepository.findByNameRegex(searchKeyword)
-    }
 
-    fun updateConversationName(conversationId: String, conversationName: String): Conversation {
-        val conversation = chatService.getConversation(conversationId)
-        conversation.name = conversationName
-        return saveConversation(conversation)
-    }
-
-    fun getUserConversations(): List<Conversation> {
+    // ✅ UPDATED: Add permissions to conversation response
+    fun getUserConversations(): List<ConversationDetailResponse> {
         val mapUser = HashMap<String, User?>()
         val userId = webUtil.getUserId()
-        return conversationRepository.findUserConversation(userId).map {
-            it.unread = chatService.countUnreadMessage(it.id as String, userId)
-            setLastMessageSender(mapUser, it)
-            if (!it.isGroup) {
-                get1on1Info(mapUser, userId, it)
+
+        return conversationRepository.findUserConversation(userId).map { conversation ->
+            conversation.unread = chatService.countUnreadMessage(conversation.id as String, userId)
+            setLastMessageSender(mapUser, conversation)
+
+            if (!conversation.isGroup) {
+                get1on1Info(mapUser, userId, conversation)
             }
-            it
+
+            // ✅ Convert to response DTO with permissions
+            ConversationDetailResponse(
+                id = conversation.id,
+                name = conversation.name,
+                avatar = conversation.avatar,
+                isGroup = conversation.isGroup,
+                members = conversation.members,
+                groupSettings = if (conversation.isGroup) {
+                    groupService.getGroup(conversation.id!!)?.settings
+                } else null,
+                userPermissions = if (conversation.isGroup) {
+                    groupPermissionService.calculatePermissions(conversation.id!!, userId)
+                } else null,
+                totalAttachment = conversation.totalAttachment,
+                unread = conversation.unread
+            )
         }.filter { it.name.isNotEmpty() }.sortedWith(
-            compareByDescending<Conversation> { it.lastMessage?.sentAt }
-                .thenByDescending { it.createdAt }
-        ).reversed()
+            compareByDescending<ConversationDetailResponse> { it.id } // Simple sort for now
+        )
     }
 
     private fun get1on1Info(mapUser: HashMap<String, User?>, userId: String, conversation: Conversation) {
@@ -80,6 +90,17 @@ class ConversationService(
             mapUser[fromId] = user
         }
         conversation.lastMessage?.sender = mapUser[fromId]?.fullName ?: ""
+    }
+
+    fun searchConversation(keyword: String): MutableList<Conversation> {
+        val searchKeyword = StringUtils.convertAliasReverse(keyword)
+        return conversationRepository.findByNameRegex(searchKeyword)
+    }
+
+    fun updateConversationName(conversationId: String, conversationName: String): Conversation {
+        val conversation = chatService.getConversation(conversationId)
+        conversation.name = conversationName
+        return saveConversation(conversation)
     }
 
     /**
@@ -190,7 +211,7 @@ class ConversationService(
                 add(userId) // Creator luôn là admin đầu tiên
 
                 // Thêm group managers (nếu chưa có)
-                group?.users?.filter { it.level == UserLevelInGroup.MANAGE }
+                group?.users?.filter { it.level == UserLevelInGroup.MANAGER }
                     ?.map { it.id }
                     ?.forEach { adminId ->
                         if (!contains(adminId)) add(adminId)

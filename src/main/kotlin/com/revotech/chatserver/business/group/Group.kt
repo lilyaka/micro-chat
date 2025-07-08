@@ -27,18 +27,18 @@ data class Group(
 
     // Helper method để check xem user có phải owner không
     fun isOwner(userId: String): Boolean {
-        return createdBy == userId || getUserRole(userId) == UserLevelInGroup.OWNER
+        return createdBy == userId || getUserRole(userId) == UserLevelInGroup.MANAGER
     }
 
     // Helper method để check xem user có quyền quản lý không
     fun canManage(userId: String): Boolean {
         val role = getUserRole(userId)
-        return role in listOf(UserLevelInGroup.OWNER, UserLevelInGroup.ADMIN)
+        return role in listOf(UserLevelInGroup.MANAGER, UserLevelInGroup.ADMIN)
     }
 
     // Helper method để lấy tất cả admins (owner + admins)
     fun getAllAdmins(): List<UserInGroup> {
-        return users.filter { it.level in listOf(UserLevelInGroup.OWNER, UserLevelInGroup.ADMIN) }
+        return users.filter { it.level in listOf(UserLevelInGroup.MANAGER, UserLevelInGroup.ADMIN) }
     }
 
     // Helper method để lấy chỉ members
