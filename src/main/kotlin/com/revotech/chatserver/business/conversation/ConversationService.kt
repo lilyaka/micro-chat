@@ -30,7 +30,7 @@ class ConversationService(
     private val groupPermissionService: GroupPermissionService
 ) {
 
-    // ✅ UPDATED: Proper groupId handling
+    // ✅ UPDATED: Add permissions to conversation response
     fun getUserConversations(): List<ConversationDetailResponse> {
         val mapUser = HashMap<String, User?>()
         val userId = webUtil.getUserId()
@@ -43,31 +43,24 @@ class ConversationService(
                 get1on1Info(mapUser, userId, conversation)
             }
 
-            // ✅ FIXED: Use actual groupId for group lookup
-            val actualGroupId = conversation.getActualGroupId()
-            val groupSettings = if (actualGroupId != null) {
-                groupService.getGroup(actualGroupId)?.settings
-            } else null
-
-            val userPermissions = if (actualGroupId != null) {
-                groupPermissionService.calculatePermissions(actualGroupId, userId)
-            } else null
-
-            // ✅ Convert to response DTO with correct groupId
+            // ✅ Convert to response DTO with permissions
             ConversationDetailResponse(
                 id = conversation.id,
                 name = conversation.name,
                 avatar = conversation.avatar,
                 isGroup = conversation.isGroup,
                 members = conversation.members,
-                groupId = actualGroupId, // ✅ Return actual group ID
-                groupSettings = groupSettings,
-                userPermissions = userPermissions,
+                groupSettings = if (conversation.isGroup) {
+                    groupService.getGroup(conversation.id!!)?.settings
+                } else null,
+                userPermissions = if (conversation.isGroup) {
+                    groupPermissionService.calculatePermissions(conversation.id!!, userId)
+                } else null,
                 totalAttachment = conversation.totalAttachment,
                 unread = conversation.unread
             )
         }.filter { it.name.isNotEmpty() }.sortedWith(
-            compareByDescending<ConversationDetailResponse> { it.id }
+            compareByDescending<ConversationDetailResponse> { it.id } // Simple sort for now
         )
     }
 
@@ -138,7 +131,7 @@ class ConversationService(
     }
 
     /**
-     * ✅ UPDATED: Create group conversation without linking to existing group
+     * ✅ FIXED: Tạo group conversation với creator làm admin mặc định
      */
     private fun createGroupConversation(conversationPayload: ConversationPayload, members: MutableList<String>): Conversation {
         if (conversationPayload.name.isBlank()) {
@@ -158,9 +151,8 @@ class ConversationService(
             "",
             true, // isGroup = true
             currentUserId,
-            adminIds,
-            members,
-            null // ✅ groupId = null for new group conversations
+            adminIds, // ✅ Guaranteed admin
+            members
         )
 
         conversation = saveConversation(conversation)
@@ -192,8 +184,7 @@ class ConversationService(
                 false, // isGroup = false
                 currentUserId,
                 mutableListOf(), // 1-on-1 không cần admin
-                mutableListOf(userId, currentUserId),
-                null // ✅ groupId = null for 1-on-1
+                mutableListOf(userId, currentUserId)
             )
             conversation = saveConversation(conversation)
 
@@ -208,7 +199,7 @@ class ConversationService(
     }
 
     /**
-     * ✅ UPDATED: Create conversation from existing group with proper groupId linking
+     * ✅ FIXED: Tạo conversation từ group có sẵn với đảm bảo admin
      */
     fun createGroupConversation(groupId: String): Conversation {
         val userId = webUtil.getUserId()
@@ -228,14 +219,13 @@ class ConversationService(
             }
 
             var conversation = Conversation(
-                groupId, // ✅ ConversationId = GroupId for compatibility
+                groupId,
                 group?.name ?: "",
                 "",
                 true,
                 userId,
-                adminIds,
-                group?.users?.map { it.id }?.toMutableList() ?: mutableListOf(),
-                groupId // ✅ IMPORTANT: Set groupId to link to actual group
+                adminIds, // ✅ Guaranteed multiple admins
+                group?.users?.map { it.id }?.toMutableList() ?: mutableListOf()
             )
 
             conversation = saveConversation(conversation)
