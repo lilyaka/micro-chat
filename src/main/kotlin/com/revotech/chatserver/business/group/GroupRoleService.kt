@@ -24,6 +24,7 @@ class GroupRoleService(
 ) {
 
     fun getGroupMembers(groupId: String): GroupMembersResponse {
+        val userId = webUtil.getUserId()
         val group = groupService.getGroup(groupId)
             ?: throw GroupException("groupNotFound", "Group not found")
 
@@ -38,7 +39,7 @@ class GroupRoleService(
                 avatar = user?.avatar ?: "",
                 level = userInGroup.level ?: UserLevelInGroup.MEMBER,
                 permissions = permissions,
-                isOnline = false
+                isOnline = false // TODO: integrate with presence service
             )
         }
 
@@ -54,6 +55,7 @@ class GroupRoleService(
         val group = groupService.getGroup(groupId)
             ?: throw GroupException("groupNotFound", "Group not found")
 
+        // Find and update target user
         val updatedUsers = group.users.map { userInGroup ->
             if (userInGroup.id == targetUserId) {
                 userInGroup.copy(level = UserLevelInGroup.ADMIN)
@@ -68,6 +70,8 @@ class GroupRoleService(
         )
 
         groupRepository.save(updatedGroup)
+
+        // Broadcast role change
         broadcastRoleChange(groupId, targetUserId, UserLevelInGroup.ADMIN, userId, "promote")
 
         return RoleChangeResponse(
@@ -86,10 +90,12 @@ class GroupRoleService(
         val group = groupService.getGroup(groupId)
             ?: throw GroupException("groupNotFound", "Group not found")
 
+        // Prevent demoting the group owner/creator
         if (group.createdBy == targetUserId) {
             throw GroupPermissionException("cannotDemoteOwner", "Cannot demote group owner")
         }
 
+        // Find and update target user
         val updatedUsers = group.users.map { userInGroup ->
             if (userInGroup.id == targetUserId) {
                 userInGroup.copy(level = UserLevelInGroup.MEMBER)
@@ -104,6 +110,8 @@ class GroupRoleService(
         )
 
         groupRepository.save(updatedGroup)
+
+        // Broadcast role change
         broadcastRoleChange(groupId, targetUserId, UserLevelInGroup.MEMBER, userId, "demote")
 
         return RoleChangeResponse(
@@ -122,21 +130,24 @@ class GroupRoleService(
         val group = groupService.getGroup(groupId)
             ?: throw GroupException("groupNotFound", "Group not found")
 
+        // Update roles: current owner becomes admin, target becomes owner
         val updatedUsers = group.users.map { userInGroup ->
             when (userInGroup.id) {
-                userId -> userInGroup.copy(level = UserLevelInGroup.ADMIN)
-                targetUserId -> userInGroup.copy(level = UserLevelInGroup.MANAGER)
+                userId -> userInGroup.copy(level = UserLevelInGroup.ADMIN) // Current owner becomes admin
+                targetUserId -> userInGroup.copy(level = UserLevelInGroup.MANAGER) // Target becomes owner
                 else -> userInGroup
             }
         }.toMutableList()
 
         val updatedGroup = group.copy(
             users = updatedUsers,
-            createdBy = targetUserId,
+            createdBy = targetUserId, // Transfer ownership
             updatedAt = LocalDateTime.now()
         )
 
         groupRepository.save(updatedGroup)
+
+        // Broadcast ownership transfer
         broadcastRoleChange(groupId, targetUserId, UserLevelInGroup.MANAGER, userId, "transfer_ownership")
         broadcastRoleChange(groupId, userId, UserLevelInGroup.ADMIN, targetUserId, "ownership_transferred")
 
@@ -172,6 +183,7 @@ class GroupRoleService(
                 "$GROUP_DESTINATION/$groupId/role",
                 message
             )
+            println("✅ Broadcasted role change for group $groupId: $action")
         } catch (e: Exception) {
             println("❌ Failed to broadcast role change: ${e.message}")
         }

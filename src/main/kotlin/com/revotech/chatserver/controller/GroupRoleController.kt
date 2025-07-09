@@ -1,19 +1,17 @@
 package com.revotech.chatserver.controller
 
+import com.revotech.chatserver.business.group.GroupAction
 import com.revotech.chatserver.business.group.GroupPermissionService
 import com.revotech.chatserver.business.group.GroupRoleService
 import com.revotech.chatserver.payload.GroupMembersResponse
 import com.revotech.chatserver.payload.RoleChangeResponse
-import com.revotech.chatserver.payload.UserGroupPermissionResponse
-import com.revotech.util.WebUtil
 import org.springframework.web.bind.annotation.*
 
 @RestController
-@RequestMapping("/conversation")
+@RequestMapping("/group")
 class GroupRoleController(
     private val groupRoleService: GroupRoleService,
-    private val groupPermissionService: GroupPermissionService,
-    private val webUtil: WebUtil
+    private val groupPermissionService: GroupPermissionService
 ) {
 
     @GetMapping("/{groupId}/members")
@@ -49,7 +47,5 @@ class GroupRoleController(
     fun getUserPermissions(
         @PathVariable groupId: String,
         @PathVariable targetUserId: String
-    ): UserGroupPermissionResponse {
-        return groupPermissionService.getUserPermissions(groupId, targetUserId)
-    }
+    ) = groupPermissionService.getUserPermissions(groupId, targetUserId)
 }

@@ -26,7 +26,7 @@ class GroupSettingsService(
             groupId = groupId,
             settings = group.settings,
             updatedAt = group.updatedAt,
-            updatedBy = null
+            updatedBy = null // Current settings, no specific updater
         )
     }
 
@@ -42,6 +42,8 @@ class GroupSettingsService(
         )
 
         groupRepository.save(updatedGroup)
+
+        // Broadcast setting change
         broadcastSettingsUpdate(groupId, updatedSettings, userId, "restrictMessaging")
 
         return GroupSettingsResponse(
@@ -64,6 +66,8 @@ class GroupSettingsService(
         )
 
         groupRepository.save(updatedGroup)
+
+        // Broadcast setting change
         broadcastSettingsUpdate(groupId, updatedSettings, userId, "allowMembersToEditInfo")
 
         return GroupSettingsResponse(
@@ -86,6 +90,8 @@ class GroupSettingsService(
         )
 
         groupRepository.save(updatedGroup)
+
+        // Broadcast setting change
         broadcastSettingsUpdate(groupId, updatedSettings, userId, "allowMembersToPinMessage")
 
         return GroupSettingsResponse(
@@ -108,6 +114,8 @@ class GroupSettingsService(
         )
 
         groupRepository.save(updatedGroup)
+
+        // Broadcast setting change
         broadcastSettingsUpdate(groupId, updatedSettings, userId, "allowMembersToAddMembers")
 
         return GroupSettingsResponse(
@@ -137,6 +145,8 @@ class GroupSettingsService(
         )
 
         groupRepository.save(updatedGroup)
+
+        // Broadcast batch setting changes
         broadcastSettingsUpdate(groupId, updatedSettings, userId, "batchUpdate")
 
         return GroupSettingsResponse(
@@ -166,6 +176,7 @@ class GroupSettingsService(
                 "$GROUP_DESTINATION/$groupId/settings",
                 message
             )
+            println("✅ Broadcasted settings update for group $groupId: $action")
         } catch (e: Exception) {
             println("❌ Failed to broadcast settings update: ${e.message}")
         }

@@ -1,20 +1,21 @@
 package com.revotech.chatserver.controller
 
+import com.revotech.chatserver.business.group.GroupAction
+import com.revotech.chatserver.business.group.GroupPermissionService
 import com.revotech.chatserver.business.group.GroupSettingsService
 import com.revotech.chatserver.payload.AllowMembersAddMembersPayload
 import com.revotech.chatserver.payload.AllowMembersEditInfoPayload
 import com.revotech.chatserver.payload.AllowMembersPinMessagePayload
-import com.revotech.chatserver.payload.GroupSettingsResponse
 import com.revotech.chatserver.payload.GroupSettingsUpdatePayload
+import com.revotech.chatserver.payload.GroupSettingsResponse
 import com.revotech.chatserver.payload.RestrictMessagingPayload
-import com.revotech.util.WebUtil
 import org.springframework.web.bind.annotation.*
 
 @RestController
 @RequestMapping("/group")
 class GroupSettingsController(
     private val groupSettingsService: GroupSettingsService,
-    private val webUtil: WebUtil
+    private val groupPermissionService: GroupPermissionService
 ) {
 
     @GetMapping("/{groupId}/settings")

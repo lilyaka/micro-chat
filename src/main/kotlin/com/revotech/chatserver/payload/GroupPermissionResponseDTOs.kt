@@ -33,8 +33,9 @@ data class ConversationDetailResponse(
     val avatar: String?,
     val isGroup: Boolean,
     val members: List<String>,
-    val groupSettings: GroupSettings? = null,        // Chỉ có nếu là group
-    val userPermissions: UserGroupPermissions? = null, // Current user's permissions nếu là group
+    val groupId: String? = null,                     // ✅ NEW: Actual group ID
+    val groupSettings: GroupSettings? = null,        // Group settings if isGroup
+    val userPermissions: UserGroupPermissions? = null, // Current user's permissions if isGroup
     val totalAttachment: Int? = 0,
     val unread: Int? = 0
 )

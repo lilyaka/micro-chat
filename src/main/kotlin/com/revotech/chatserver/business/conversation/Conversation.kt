@@ -15,6 +15,7 @@ class Conversation(
     val creatorId: String,
     val adminIds: MutableList<String>,
     var avatar: String?,
+    var groupId: String? = null, // ✅ NEW FIELD: Link to Group entity
     var lastMessage: Message?,
     var isGroup: Boolean,
     var members: MutableList<String>,
@@ -42,7 +43,7 @@ class Conversation(
     }
 
     constructor() : this(
-        null, "", "", mutableListOf(), "", null, false, mutableListOf(), null, LocalDateTime.now()
+        null, "", "", mutableListOf(), "", null, null, false, mutableListOf(), null, LocalDateTime.now()
     )
 
     constructor(
@@ -52,7 +53,8 @@ class Conversation(
         isGroup: Boolean,
         userId: String,
         adminIds: MutableList<String>,
-        members: MutableList<String>
+        members: MutableList<String>,
+        groupId: String? = null // ✅ NEW PARAMETER
     ) : this(
         id,
         name,
@@ -60,6 +62,7 @@ class Conversation(
         // ✅ ENSURE: Creator luôn là admin nếu là group
         ensureCreatorIsAdmin(adminIds, userId, isGroup),
         avatar,
+        groupId, // ✅ SET groupId
         null,
         isGroup,
         // ✅ ENSURE: Creator luôn là member
@@ -122,6 +125,13 @@ class Conversation(
      */
     fun isCreator(userId: String): Boolean {
         return creatorId == userId
+    }
+
+    /**
+     * ✅ NEW: Get actual groupId for group conversations
+     */
+    fun getActualGroupId(): String? {
+        return if (isGroup) groupId else null
     }
 
     /**
