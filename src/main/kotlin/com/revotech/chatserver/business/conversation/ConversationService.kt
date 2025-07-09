@@ -6,6 +6,7 @@ import com.revotech.chatserver.business.aop.AfterDeleteConversation
 import com.revotech.chatserver.business.exception.ConversationValidateException
 import com.revotech.chatserver.business.group.GroupPermissionService
 import com.revotech.chatserver.business.group.GroupService
+import com.revotech.chatserver.business.group.UserInGroup
 import com.revotech.chatserver.business.group.UserLevelInGroup
 import com.revotech.chatserver.business.message.Message
 import com.revotech.chatserver.business.message.MessageType
@@ -104,9 +105,7 @@ class ConversationService(
     }
 
     /**
-     * Tạo conversation thông minh:
-     * - 2 người: Tự động tạo 1-on-1 (kiểm tra existing trước)
-     * - >2 người: Tự động tạo nhóm (creator luôn là admin)
+     * ✅ UPDATED: Tạo conversation thông minh với Group tự động
      */
     fun createConversation(conversationPayload: ConversationPayload): Conversation {
         if (conversationPayload.members.isEmpty()) {
@@ -125,39 +124,51 @@ class ConversationService(
                 findOrCreate1on1Conversation(targetUserId)
             }
             else -> {
-                createGroupConversation(conversationPayload, allMembers)
+                createGroupConversationWithGroup(conversationPayload, allMembers)
             }
         }
     }
 
     /**
-     * ✅ FIXED: Tạo group conversation với creator làm admin mặc định
+     * ✅ NEW: Tạo group conversation + group entity
      */
-    private fun createGroupConversation(conversationPayload: ConversationPayload, members: MutableList<String>): Conversation {
+    private fun createGroupConversationWithGroup(
+        conversationPayload: ConversationPayload,
+        members: MutableList<String>
+    ): Conversation {
         if (conversationPayload.name.isBlank()) {
             throw ConversationValidateException("groupNameRequired", "Tên nhóm không được để trống.")
         }
 
         val currentUserId = webUtil.getUserId()
 
-        // ✅ ENSURE: Creator luôn là admin đầu tiên
-        val adminIds = mutableListOf<String>().apply {
-            add(currentUserId) // Creator luôn là admin
-        }
+        // ✅ Step 1: Create Group entity first (this will have proper roles)
+        val group = groupService.createGroupFromConversation(
+            conversationId = "", // Will be set after conversation creation
+            name = conversationPayload.name,
+            memberIds = members
+        )
 
+        // ✅ Step 2: Create Conversation với same ID
         var conversation = Conversation(
-            null,
+            group.id, // ⭐ Same ID as group
             conversationPayload.name,
             "",
             true, // isGroup = true
             currentUserId,
-            adminIds, // ✅ Guaranteed admin
+            mutableListOf(currentUserId), // Creator is admin
             members
         )
 
         conversation = saveConversation(conversation)
 
-        // Notify other members
+        // ✅ Step 3: Update group ID to match conversation
+        if (group.id != conversation.id) {
+            val updatedGroup = group.copy(id = conversation.id!!)
+            groupService.saveGroup(updatedGroup)
+        }
+
+        // ✅ Step 4: Notify other members
         members.filter { it != currentUserId }.forEach { memberId ->
             simpMessagingTemplate.convertAndSendToUser(
                 memberId,
@@ -199,33 +210,30 @@ class ConversationService(
     }
 
     /**
-     * ✅ FIXED: Tạo conversation từ group có sẵn với đảm bảo admin
+     * ✅ UPDATED: Tạo conversation từ existing group
      */
     fun createGroupConversation(groupId: String): Conversation {
         val userId = webUtil.getUserId()
         return conversationRepository.findById(groupId).orElseGet {
             val group = groupService.getGroup(groupId)
+                ?: throw ConversationValidateException("groupNotFound", "Group not found")
 
-            // ✅ ENSURE: Creator + Group managers đều là admin
-            val adminIds = mutableListOf<String>().apply {
-                add(userId) // Creator luôn là admin đầu tiên
+            // ✅ Get admins from group
+            val adminIds = group.getAllAdmins().map { it.id }.toMutableList()
 
-                // Thêm group managers (nếu chưa có)
-                group?.users?.filter { it.level == UserLevelInGroup.MANAGER }
-                    ?.map { it.id }
-                    ?.forEach { adminId ->
-                        if (!contains(adminId)) add(adminId)
-                    }
+            // ✅ Ensure current user is admin if not already
+            if (!adminIds.contains(userId)) {
+                adminIds.add(userId)
             }
 
             var conversation = Conversation(
-                groupId,
-                group?.name ?: "",
+                groupId, // ⭐ Same ID as group
+                group.name,
                 "",
                 true,
                 userId,
-                adminIds, // ✅ Guaranteed multiple admins
-                group?.users?.map { it.id }?.toMutableList() ?: mutableListOf()
+                adminIds,
+                group.users.map { it.id }.toMutableList()
             )
 
             conversation = saveConversation(conversation)
@@ -277,6 +285,25 @@ class ConversationService(
         if (filteredMemberIds.isNotEmpty()) {
             conversation.members.addAll(filteredMemberIds)
 
+            // ✅ Also update group if it's a group conversation
+            if (conversation.isGroup) {
+                val group = groupService.getGroup(conversationId)
+                group?.let {
+                    val updatedUsers = group.users.toMutableList()
+                    filteredMemberIds.forEach { memberId ->
+                        updatedUsers.add(
+                            UserInGroup(
+                                id = memberId,
+                                level = UserLevelInGroup.MEMBER, // New members = MEMBER
+                                fullName = null,
+                                email = null
+                            )
+                        )
+                    }
+                    groupService.saveGroup(group.copy(users = updatedUsers))
+                }
+            }
+
             filteredMemberIds.forEach {
                 simpMessagingTemplate.convertAndSendToUser(
                     it,
@@ -300,6 +327,16 @@ class ConversationService(
         var conversation = chatService.getConversation(conversationId)
         if (conversation.members.any { it == memberId }) {
             conversation.members.remove(memberId)
+
+            // ✅ Also update group if it's a group conversation
+            if (conversation.isGroup) {
+                val group = groupService.getGroup(conversationId)
+                group?.let {
+                    val updatedUsers = group.users.filter { it.id != memberId }.toMutableList()
+                    groupService.saveGroup(group.copy(users = updatedUsers))
+                }
+            }
+
             simpMessagingTemplate.convertAndSendToUser(
                 memberId,
                 PRIVATE_CHANNEL_DESTINATION,
@@ -320,6 +357,14 @@ class ConversationService(
     @AfterDeleteConversation
     fun deleteConversation(conversationId: String): String {
         val conversation = chatService.getConversation(conversationId)
+
+        // ✅ Also delete group if it's a group conversation
+        if (conversation.isGroup) {
+            groupService.getGroup(conversationId)?.let {
+                // Mark group as deleted instead of hard delete
+                groupService.saveGroup(it.copy(isDelete = true))
+            }
+        }
 
         chatService.deleteConversationMessages(conversationId)
         conversationRepository.deleteById(conversationId)

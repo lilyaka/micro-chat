@@ -1,5 +1,6 @@
 package com.revotech.chatserver.controller
 
+import com.revotech.chatserver.business.conversation.ConversationMemberService
 import com.revotech.chatserver.business.conversation.ConversationService
 import com.revotech.chatserver.business.message.MessageService
 import com.revotech.chatserver.business.user.UserService
@@ -11,7 +12,7 @@ import org.springframework.web.bind.annotation.*
 class ConversationController(
     private val conversationService: ConversationService,
     private val messageService: MessageService,
-    private val userService: UserService
+    private val conversationMemberService: ConversationMemberService
 ) {
 
     @GetMapping("")
@@ -86,7 +87,7 @@ class ConversationController(
 
     @GetMapping("/{conversationId}/members")
     fun getConversationMembers(@PathVariable conversationId: String) =
-        userService.getConversationMembers(conversationId)
+        conversationMemberService.getConversationMembersWithPermissions(conversationId)
 
     @PutMapping("/{conversationId}/members/add")
     fun addConversationMember(
