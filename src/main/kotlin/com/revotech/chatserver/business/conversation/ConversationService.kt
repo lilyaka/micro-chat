@@ -130,7 +130,7 @@ class ConversationService(
     }
 
     /**
-     * ✅ NEW: Tạo group conversation + group entity
+     * ✅ FIXED: Create conversation first, then group with same ID
      */
     private fun createGroupConversationWithGroup(
         conversationPayload: ConversationPayload,
@@ -142,16 +142,9 @@ class ConversationService(
 
         val currentUserId = webUtil.getUserId()
 
-        // ✅ Step 1: Create Group entity first (this will have proper roles)
-        val group = groupService.createGroupFromConversation(
-            conversationId = "", // Will be set after conversation creation
-            name = conversationPayload.name,
-            memberIds = members
-        )
-
-        // ✅ Step 2: Create Conversation với same ID
+        // ✅ Step 1: Create Conversation first
         var conversation = Conversation(
-            group.id, // ⭐ Same ID as group
+            null, // Let MongoDB generate ID
             conversationPayload.name,
             "",
             true, // isGroup = true
@@ -160,15 +153,26 @@ class ConversationService(
             members
         )
 
-        conversation = saveConversation(conversation)
+        conversation = saveConversation(conversation) // Get generated ID
 
-        // ✅ Step 3: Update group ID to match conversation
-        if (group.id != conversation.id) {
-            val updatedGroup = group.copy(id = conversation.id!!)
-            groupService.saveGroup(updatedGroup)
+        // ✅ Step 2: Create Group with SAME ID as conversation
+        try {
+            val group = groupService.createGroup(
+                groupId = conversation.id!!, // ⭐ Use conversation's ID
+                name = conversationPayload.name,
+                memberIds = members,
+                creatorId = currentUserId
+            )
+
+            println("✅ Created Group entity with ID: ${group.id} for conversation: ${conversation.id}")
+        } catch (e: Exception) {
+            println("❌ Failed to create Group entity: ${e.message}")
+            // Clean up conversation if group creation fails
+            conversationRepository.deleteById(conversation.id!!)
+            throw ConversationValidateException("groupCreationFailed", "Failed to create group entity: ${e.message}")
         }
 
-        // ✅ Step 4: Notify other members
+        // ✅ Step 3: Notify other members
         members.filter { it != currentUserId }.forEach { memberId ->
             simpMessagingTemplate.convertAndSendToUser(
                 memberId,

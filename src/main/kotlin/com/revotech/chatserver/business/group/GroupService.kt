@@ -24,7 +24,7 @@ class GroupService(
     }
 
     /**
-     * ✅ NEW: Create group with proper role assignment
+     * ✅ FIXED: Create group with proper ID handling
      */
     fun createGroup(
         groupId: String? = null,
@@ -51,7 +51,7 @@ class GroupService(
         }.toMutableList()
 
         val group = Group(
-            id = groupId ?: "", // MongoDB will generate if empty
+            id = groupId ?: "", // ✅ Use provided ID or empty for auto-generation
             name = name,
             isDelete = false,
             users = users,
@@ -61,11 +61,18 @@ class GroupService(
             updatedAt = LocalDateTime.now()
         )
 
-        return groupRepository.save(group)
+        return try {
+            val savedGroup = groupRepository.save(group)
+            println("✅ GroupService: Created group with ID: ${savedGroup.id}")
+            savedGroup
+        } catch (e: Exception) {
+            println("❌ GroupService: Failed to create group: ${e.message}")
+            throw e
+        }
     }
 
     /**
-     * ✅ NEW: Create group from conversation payload
+     * ✅ UPDATED: Create group from conversation payload
      */
     fun createGroupFromConversation(
         conversationId: String,
@@ -73,8 +80,18 @@ class GroupService(
         memberIds: List<String>
     ): Group {
         val currentUserId = webUtil.getUserId()
+
+        // ✅ Check if group already exists first
+        if (conversationId.isNotEmpty()) {
+            val existingGroup = getGroup(conversationId)
+            if (existingGroup != null) {
+                println("✅ GroupService: Group already exists with ID: $conversationId")
+                return existingGroup
+            }
+        }
+
         return createGroup(
-            groupId = conversationId, // ⭐ Same ID as conversation
+            groupId = conversationId.takeIf { it.isNotEmpty() }, // ⭐ Use conversation ID if provided
             name = name,
             memberIds = memberIds,
             creatorId = currentUserId
@@ -84,5 +101,14 @@ class GroupService(
     /**
      * ✅ NEW: Save group
      */
-    fun saveGroup(group: Group): Group = groupRepository.save(group)
+    fun saveGroup(group: Group): Group {
+        return try {
+            val savedGroup = groupRepository.save(group)
+            println("✅ GroupService: Saved group with ID: ${savedGroup.id}")
+            savedGroup
+        } catch (e: Exception) {
+            println("❌ GroupService: Failed to save group: ${e.message}")
+            throw e
+        }
+    }
 }

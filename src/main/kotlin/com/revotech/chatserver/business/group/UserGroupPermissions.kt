@@ -18,7 +18,10 @@ data class UserGroupPermissions(
             userRole: UserLevelInGroup,
             groupSettings: GroupSettings
         ): UserGroupPermissions {
-            return when (userRole) {
+            // ✅ Handle MANAGE as MANAGER for permissions
+            val effectiveRole = UserLevelInGroup.getEffectiveLevel(userRole)
+
+            return when (effectiveRole) {
                 UserLevelInGroup.MANAGER -> UserGroupPermissions(
                     canSendMessage = true,
                     canEditGroupInfo = true,
@@ -57,6 +60,8 @@ data class UserGroupPermissions(
                     canDeleteGroup = false,
                     canChangeNickname = groupSettings.allowMembersToChangeNickname
                 )
+
+                else -> noPermissions() // Fallback for any unknown roles
             }
         }
 
@@ -78,19 +83,23 @@ data class UserGroupPermissions(
 
         // Quick check methods cho common actions
         fun canManageGroup(userRole: UserLevelInGroup): Boolean {
-            return userRole in listOf(UserLevelInGroup.MANAGER, UserLevelInGroup.ADMIN)
+            val effectiveRole = UserLevelInGroup.getEffectiveLevel(userRole)
+            return effectiveRole in listOf(UserLevelInGroup.MANAGER, UserLevelInGroup.ADMIN)
         }
 
         fun canPromote(userRole: UserLevelInGroup): Boolean {
-            return userRole in listOf(UserLevelInGroup.MANAGER, UserLevelInGroup.ADMIN)
+            val effectiveRole = UserLevelInGroup.getEffectiveLevel(userRole)
+            return effectiveRole in listOf(UserLevelInGroup.MANAGER, UserLevelInGroup.ADMIN)
         }
 
         fun canDemote(userRole: UserLevelInGroup): Boolean {
-            return userRole == UserLevelInGroup.MANAGER
+            val effectiveRole = UserLevelInGroup.getEffectiveLevel(userRole)
+            return effectiveRole == UserLevelInGroup.MANAGER
         }
 
         fun canDeleteGroup(userRole: UserLevelInGroup): Boolean {
-            return userRole == UserLevelInGroup.MANAGER
+            val effectiveRole = UserLevelInGroup.getEffectiveLevel(userRole)
+            return effectiveRole == UserLevelInGroup.MANAGER
         }
     }
 }
