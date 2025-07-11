@@ -28,11 +28,9 @@ class ConversationService(
     private val simpMessagingTemplate: SimpMessagingTemplate,
     private val fileServiceClient: FileServiceClient,
     private val webUtil: WebUtil,
-    private val groupPermissionService: GroupPermissionService
 ) {
 
-    // ✅ UPDATED: Add permissions to conversation response
-    fun getUserConversations(): List<ConversationDetailResponse> {
+    fun getUserConversations(): List<Conversation> {
         val mapUser = HashMap<String, User?>()
         val userId = webUtil.getUserId()
 
@@ -44,25 +42,10 @@ class ConversationService(
                 get1on1Info(mapUser, userId, conversation)
             }
 
-            // ✅ Convert to response DTO with permissions
-            ConversationDetailResponse(
-                id = conversation.id,
-                name = conversation.name,
-                avatar = conversation.avatar,
-                isGroup = conversation.isGroup,
-                members = conversation.members,
-                groupSettings = if (conversation.isGroup) {
-                    groupService.getGroup(conversation.id!!)?.settings
-                } else null,
-                userPermissions = if (conversation.isGroup) {
-                    groupPermissionService.calculatePermissions(conversation.id!!, userId)
-                } else null,
-                totalAttachment = conversation.totalAttachment,
-                unread = conversation.unread
-            )
-        }.filter { it.name.isNotEmpty() }.sortedWith(
-            compareByDescending<ConversationDetailResponse> { it.id } // Simple sort for now
-        )
+            conversation
+        }.filter { it.name.isNotEmpty() }.sortedByDescending { conversation ->
+            conversation.lastMessage?.sentAt ?: conversation.createdAt
+        }
     }
 
     private fun get1on1Info(mapUser: HashMap<String, User?>, userId: String, conversation: Conversation) {
