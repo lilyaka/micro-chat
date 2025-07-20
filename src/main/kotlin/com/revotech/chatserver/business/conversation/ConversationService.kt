@@ -43,9 +43,9 @@ class ConversationService(
             }
 
             conversation
-        }.filter { it.name.isNotEmpty() }.sortedByDescending { conversation ->
-            conversation.lastMessage?.sentAt ?: conversation.createdAt
-        }
+        }.filter { it.name.isNotEmpty() }.sortedWith(
+            compareByDescending<Conversation> { it.lastMessage?.sentAt ?: it.createdAt }
+        )
     }
 
     private fun get1on1Info(mapUser: HashMap<String, User?>, userId: String, conversation: Conversation) {
