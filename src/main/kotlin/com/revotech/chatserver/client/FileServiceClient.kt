@@ -3,7 +3,7 @@ package com.revotech.chatserver.client
 import org.springframework.cloud.openfeign.FeignClient
 import org.springframework.web.bind.annotation.*
 
-@FeignClient("file-service")
+@FeignClient("file-service", contextId = "chat-file-service")
 interface FileServiceClient {
     @PostMapping("/chat/upload-attachment")
     fun uploadChatAttachment(

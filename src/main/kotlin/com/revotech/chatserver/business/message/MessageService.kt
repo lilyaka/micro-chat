@@ -4,6 +4,8 @@ import com.revotech.chatserver.business.CHAT_DESTINATION
 import com.revotech.chatserver.business.ChatService
 import com.revotech.chatserver.business.attachment.Attachment
 import com.revotech.chatserver.business.conversation.Conversation
+import com.revotech.chatserver.business.event.MessageNotificationEvent
+import com.revotech.chatserver.business.event.MessageNotificationPayload
 import com.revotech.chatserver.business.exception.GroupPermissionException
 import com.revotech.chatserver.business.group.GroupPermissionService
 import com.revotech.chatserver.business.presence.UserPresenceService
@@ -14,6 +16,7 @@ import com.revotech.chatserver.business.user.UserService
 import com.revotech.chatserver.helper.TenantHelper
 import com.revotech.chatserver.payload.MessagePayload
 import com.revotech.util.WebUtil
+import org.springframework.context.ApplicationEventPublisher
 import org.springframework.data.domain.Page
 import org.springframework.data.domain.PageRequest
 import org.springframework.data.domain.Pageable
@@ -34,7 +37,8 @@ class MessageService(
     private val userPresenceService: UserPresenceService,
     private val typingService: TypingService,
     private val messageReactionService: MessageReactionService,
-    private val groupPermissionService: GroupPermissionService // ✅ ADDED
+    private val groupPermissionService: GroupPermissionService,
+    private val applicationEventPublisher: ApplicationEventPublisher
 ) {
     fun sendMessage(messagePayload: MessagePayload, principal: Principal) {
         val userId = principal.name
@@ -65,6 +69,8 @@ class MessageService(
                 // Track user activity khi gửi message
                 userPresenceService.updateUserActivity(userId)
 
+                sendNewMessageNotification(message, conversation, userId)
+
                 simpMessagingTemplate.convertAndSend(
                     "${CHAT_DESTINATION}/${if (conversation.isGroup) "group" else "user"}/${messagePayload.conversationId}",
                     getSentMessage(messageRepository.save(message))
@@ -75,6 +81,64 @@ class MessageService(
 
                 chatService.saveConversation(conversation)
             }
+        }
+    }
+
+    private fun sendNewMessageNotification(message: Message, conversation: Conversation, senderId: String) {
+        try {
+            println("🔍 === NOTIFICATION DEBUG START ===")
+            println("🔍 Sender ID: $senderId")
+            println("🔍 Conversation ID: ${conversation.id}")
+            println("🔍 Is Group: ${conversation.isGroup}")
+            println("🔍 All Members: ${conversation.members}")
+
+            val sender = userService.getUser(senderId)
+            println("🔍 Sender Info: ${sender?.fullName} (${sender?.id})")
+
+            val conversationName = if (conversation.isGroup) {
+                conversation.name
+            } else {
+                sender?.fullName ?: "Someone"
+            }
+            println("🔍 Conversation Name: $conversationName")
+
+            val recipientIds = if (conversation.isGroup) {
+                conversation.members.map { it.toString() }.filter { it != senderId }
+            } else {
+                listOf(conversation.members.first { it.toString() != senderId })
+            }
+
+            println("🔍 Recipients after filter: $recipientIds")
+            println("🔍 Total recipients: ${recipientIds.size}")
+
+            recipientIds.forEach { memberId ->
+                println("📤 Creating notification for: $memberId")
+                println("   - From: $senderId")
+                println("   - To: $memberId")
+                println("   - Message: ${message.content}")
+
+                val notificationEvent = MessageNotificationEvent(
+                    MessageNotificationPayload(
+                        tenantId = webUtil.getTenantId(),
+                        fromUserId = senderId,
+                        toUserId = memberId,
+                        messageId = message.id ?: "temp",
+                        conversationId = conversation.id!!,
+                        conversationName = conversationName,
+                        senderName = sender?.fullName ?: "Unknown",
+                        content = message.content ?: "[File]",
+                        isGroupMessage = conversation.isGroup
+                    )
+                )
+
+                println("📡 Publishing notification event for: $memberId")
+                applicationEventPublisher.publishEvent(notificationEvent)
+            }
+
+            println("🔍 === NOTIFICATION DEBUG END ===")
+        } catch (e: Exception) {
+            println("❌ Failed to send message notification: ${e.message}")
+            e.printStackTrace()
         }
     }
 
