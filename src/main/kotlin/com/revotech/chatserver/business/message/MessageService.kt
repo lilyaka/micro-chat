@@ -35,7 +35,6 @@ class MessageService(
     private val chatService: ChatService,
     private val webUtil: WebUtil,
     private val userPresenceService: UserPresenceService,
-    private val typingService: TypingService,
     private val messageReactionService: MessageReactionService,
     private val groupPermissionService: GroupPermissionService,
     private val applicationEventPublisher: ApplicationEventPublisher
@@ -86,21 +85,14 @@ class MessageService(
 
     private fun sendNewMessageNotification(message: Message, conversation: Conversation, senderId: String) {
         try {
-            println("🔍 === NOTIFICATION DEBUG START ===")
-            println("🔍 Sender ID: $senderId")
-            println("🔍 Conversation ID: ${conversation.id}")
-            println("🔍 Is Group: ${conversation.isGroup}")
-            println("🔍 All Members: ${conversation.members}")
 
             val sender = userService.getUser(senderId)
-            println("🔍 Sender Info: ${sender?.fullName} (${sender?.id})")
 
             val conversationName = if (conversation.isGroup) {
                 conversation.name
             } else {
                 sender?.fullName ?: "Someone"
             }
-            println("🔍 Conversation Name: $conversationName")
 
             val recipientIds = if (conversation.isGroup) {
                 conversation.members.map { it.toString() }.filter { it != senderId }
@@ -108,15 +100,7 @@ class MessageService(
                 listOf(conversation.members.first { it.toString() != senderId })
             }
 
-            println("🔍 Recipients after filter: $recipientIds")
-            println("🔍 Total recipients: ${recipientIds.size}")
-
             recipientIds.forEach { memberId ->
-                println("📤 Creating notification for: $memberId")
-                println("   - From: $senderId")
-                println("   - To: $memberId")
-                println("   - Message: ${message.content}")
-
                 val notificationEvent = MessageNotificationEvent(
                     MessageNotificationPayload(
                         tenantId = webUtil.getTenantId(),
@@ -131,11 +115,9 @@ class MessageService(
                     )
                 )
 
-                println("📡 Publishing notification event for: $memberId")
                 applicationEventPublisher.publishEvent(notificationEvent)
             }
 
-            println("🔍 === NOTIFICATION DEBUG END ===")
         } catch (e: Exception) {
             println("❌ Failed to send message notification: ${e.message}")
             e.printStackTrace()

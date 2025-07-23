@@ -146,8 +146,6 @@ class ConversationService(
                 memberIds = members,
                 creatorId = currentUserId
             )
-
-            println("✅ Created Group entity with ID: ${group.id} for conversation: ${conversation.id}")
         } catch (e: Exception) {
             println("❌ Failed to create Group entity: ${e.message}")
             // Clean up conversation if group creation fails

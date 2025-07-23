@@ -18,16 +18,5 @@ data class GroupSettings(
                 allowMembersToChangeNickname = true     // Mặc định ai cũng đổi nickname được
             )
         }
-
-        // Migration settings cho group cũ - liberal hơn để tránh break existing behavior
-        fun legacySettings(): GroupSettings {
-            return GroupSettings(
-                restrictMessaging = false,              // Giữ nguyên behavior cũ
-                allowMembersToEditInfo = true,          // Liberal cho group cũ
-                allowMembersToPinMessage = true,        // Liberal cho group cũ
-                allowMembersToAddMembers = false,       // Conservative
-                allowMembersToChangeNickname = true
-            )
-        }
     }
 }

@@ -1,4 +1,5 @@
 package com.revotech.chatserver.business.notification
+
 import com.revotech.chatserver.business.event.MessageNotificationEvent
 import com.revotech.chatserver.business.event.MessageNotificationPayload
 import com.revotech.dto.NotificationRequest
@@ -15,11 +16,7 @@ class MessageNotificationService(
 
     @EventListener
     fun handleMessageNotification(event: MessageNotificationEvent) {
-        println("👂 === MESSAGE NOTIFICATION EVENT RECEIVED ===")
-
         val payload = event.source as MessageNotificationPayload
-        println("👂 Event payload: From=${payload.fromUserId}, To=${payload.toUserId}")
-
         try {
             sendNotificationToUser(payload)
         } catch (e: Exception) {
@@ -29,18 +26,8 @@ class MessageNotificationService(
     }
 
     private fun sendNotificationToUser(payload: MessageNotificationPayload) {
-        println("🔔 === NOTIFICATION SERVICE DEBUG START ===")
-        println("🔔 Payload received:")
-        println("   - From User: ${payload.fromUserId}")
-        println("   - To User: ${payload.toUserId}")
-        println("   - Sender Name: ${payload.senderName}")
-        println("   - Content: ${payload.content}")
-        println("   - Is Group: ${payload.isGroupMessage}")
-        println("   - Conversation: ${payload.conversationName}")
 
-        // ✅ DOUBLE CHECK: Skip nếu same user
         if (payload.fromUserId == payload.toUserId) {
-            println("❌ SKIPPING: Same user detected! From=${payload.fromUserId}, To=${payload.toUserId}")
             return
         }
 
@@ -49,7 +36,6 @@ class MessageNotificationService(
         } else {
             payload.senderName
         }
-        println("🔔 Notification Title: $title")
 
         val content = buildString {
             if (payload.isGroupMessage) {
@@ -57,33 +43,28 @@ class MessageNotificationService(
             }
             append(payload.content)
         }
-        println("🔔 Notification Content: $content")
 
         try {
             val notification = NotificationEvent(
                 NotificationPayload(
                     payload.tenantId,
-                    payload.fromUserId,
+                    payload.toUserId,
                     NotificationRequest(
                         userId = payload.toUserId,
                         content = content,
                         module = "CHAT",
                         function = "CHAT/MESSAGE",
                         title = title,
-                        action = "OPEN_CONVERSATION"
+                        action = "OPEN_CONVERSATION",
+                        fromUserId = payload.fromUserId
                     )
                 )
             )
-
-            println("📡 Publishing NotificationEvent to library...")
             applicationEventPublisher.publishEvent(notification)
-            println("✅ NotificationEvent published successfully!")
 
         } catch (e: Exception) {
             println("❌ Failed to create/publish NotificationEvent: ${e.message}")
             e.printStackTrace()
         }
-
-        println("🔔 === NOTIFICATION SERVICE DEBUG END ===")
     }
 }

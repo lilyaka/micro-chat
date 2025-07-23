@@ -41,7 +41,6 @@ class GroupService(
             } else {
                 UserLevelInGroup.MEMBER  // Others = MEMBER
             }
-
             UserInGroup(
                 id = memberId,
                 level = level,
@@ -63,7 +62,6 @@ class GroupService(
 
         return try {
             val savedGroup = groupRepository.save(group)
-            println("✅ GroupService: Created group with ID: ${savedGroup.id}")
             savedGroup
         } catch (e: Exception) {
             println("❌ GroupService: Failed to create group: ${e.message}")
@@ -104,7 +102,6 @@ class GroupService(
     fun saveGroup(group: Group): Group {
         return try {
             val savedGroup = groupRepository.save(group)
-            println("✅ GroupService: Saved group with ID: ${savedGroup.id}")
             savedGroup
         } catch (e: Exception) {
             println("❌ GroupService: Failed to save group: ${e.message}")

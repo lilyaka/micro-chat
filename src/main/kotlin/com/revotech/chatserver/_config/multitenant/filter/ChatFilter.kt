@@ -37,35 +37,17 @@ class ChatFilter(
         val httpRequest = request as HttpServletRequest
         val httpResponse = response as HttpServletResponse
 
-        // Skip logging for health check endpoints
-        if (isHealthCheckEndpoint(httpRequest)) {
-            val token = extractBearerToken(httpRequest)
-            if (token != null) {
-                processAuthenticatedRequest(token, httpRequest, httpResponse, chain)
-            } else {
-                chain.doFilter(request, response)
-            }
-            return
-        }
-
         try {
-            logRequestInfo(httpRequest)
-
             val token = extractBearerToken(httpRequest)
             if (token != null) {
                 processAuthenticatedRequest(token, httpRequest, httpResponse, chain)
             } else {
-                logInfo("No Bearer token found, proceeding without authentication")
                 chain.doFilter(request, response)
             }
         } catch (e: Exception) {
             logError("Unexpected error in ChatFilter", e)
             handleError(httpResponse, HttpStatus.INTERNAL_SERVER_ERROR, "filterError", "Request processing failed")
         }
-    }
-
-    private fun isHealthCheckEndpoint(request: HttpServletRequest): Boolean {
-        return request.requestURI.startsWith("/actuator/")
     }
 
     private fun processAuthenticatedRequest(
@@ -76,31 +58,23 @@ class ChatFilter(
     ) {
         try {
             val claims = tokenHelper.getClaims(token)
-            logInfo("JWT validated successfully for user: ${claims.subject}")
 
             val tenant = claims["tenant"] as String? ?: throw TenantException(
                 "tenantRequired",
                 "Tenant claim not found in JWT"
             )
-            logInfo("Extracted tenant: $tenant")
-
             currentTenant = tenant
             TenantContext.currentUser = claims.subject
-            logInfo("Set tenant context: $tenant, user: ${claims.subject}")
-
             val authentication = tokenHelper.toPrincipal(token) as UsernamePasswordAuthenticationToken
             SecurityContextHolder.getContext().authentication = authentication
-            logInfo("Set Spring Security authentication")
-
             if (isMultipartRequest(request)) {
                 handleMultipartRequest(request, response, chain)
             } else {
                 chain.doFilter(request, response)
             }
-
         } catch (e: TenantException) {
             logError("Tenant validation failed", e)
-            handleError(response, HttpStatus.BAD_REQUEST, e.code, e.message ?: "Tenant error")
+            handleError(response, HttpStatus.BAD_REQUEST, e.code, e.message)
         } catch (e: MessagingException) {
             logError("JWT validation failed", e)
             handleError(response, HttpStatus.UNAUTHORIZED, "invalidJwt", "Invalid or expired JWT token")
@@ -136,13 +110,9 @@ class ChatFilter(
         chain: FilterChain
     ) {
         try {
-            logInfo("Processing multipart/form-data request")
-
             if (multipartResolver.isMultipart(request)) {
-                logInfo("Valid multipart request detected")
                 chain.doFilter(request, response)
             } else {
-                logInfo("Invalid multipart request format")
                 handleError(response, HttpStatus.BAD_REQUEST, "invalidMultipart", "Invalid multipart request format")
             }
         } catch (e: Exception) {
@@ -156,18 +126,8 @@ class ChatFilter(
             currentTenant = null
             TenantContext.currentUser = null
             SecurityContextHolder.clearContext()
-            if (!isHealthCheckCurrentRequest()) {
-                logInfo("Cleaned up tenant and security context")
-            }
         } catch (e: Exception) {
             logError("Error during cleanup", e)
-        }
-    }
-
-    private fun isHealthCheckCurrentRequest(): Boolean {
-        // Simple check to avoid logging cleanup for health checks
-        return Thread.currentThread().stackTrace.any {
-            it.className.contains("HealthIndicator") || it.className.contains("actuator")
         }
     }
 
@@ -191,19 +151,6 @@ class ChatFilter(
         } catch (e: IOException) {
             logError("Failed to write error response", e)
         }
-    }
-
-    private fun logRequestInfo(request: HttpServletRequest) {
-        val method = request.method
-        val uri = request.requestURI
-        val contentType = request.contentType ?: "N/A"
-        val hasAuth = request.getHeader("Authorization") != null
-
-        logInfo("🌐 Request: $method $uri | Content-Type: $contentType | HasAuth: $hasAuth")
-    }
-
-    private fun logInfo(message: String) {
-        println("✅ ChatFilter: $message")
     }
 
     private fun logError(message: String, exception: Exception?) {

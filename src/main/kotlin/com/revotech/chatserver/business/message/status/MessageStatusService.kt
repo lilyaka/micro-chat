@@ -26,7 +26,6 @@ class MessageStatusService(
     private val mongoTemplate: MongoTemplate,
     private val simpMessagingTemplate: SimpMessagingTemplate,
     private val chatService: ChatService,
-    private val webUtil: WebUtil,
     private val tenantHelper: TenantHelper
 ) {
 
@@ -158,7 +157,7 @@ class MessageStatusService(
         }
 
         val statusUpdate = MessageStatusUpdate(
-            messageId = message.id!!,
+            messageId = message.id,
             status = status,
             deliveryInfo = deliveryInfo,
             timestamp = LocalDateTime.now()

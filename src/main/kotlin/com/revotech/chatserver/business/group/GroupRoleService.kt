@@ -183,7 +183,6 @@ class GroupRoleService(
                 "$GROUP_DESTINATION/$groupId/role",
                 message
             )
-            println("✅ Broadcasted role change for group $groupId: $action")
         } catch (e: Exception) {
             println("❌ Failed to broadcast role change: ${e.message}")
         }
